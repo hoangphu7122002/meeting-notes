@@ -1,4 +1,5 @@
 import AppKit
+import MeetingNotesUI
 
 // Command-line entry points run before (and instead of) the app.
 let arguments = CommandLine.arguments
@@ -39,10 +40,6 @@ if let index = arguments.firstIndex(of: "--self-test-record") {
 }
 
 #if DEBUG
-if let index = arguments.firstIndex(of: "--render-pill-previews"), index + 1 < arguments.count {
-    let dir = URL(fileURLWithPath: arguments[index + 1], isDirectory: true)
-    MainActor.assumeIsolated { PreviewRenderer.run(dir: dir) }
-}
 if let index = arguments.firstIndex(of: "--self-test-worker") {
     let folders = arguments.dropFirst(index + 1).prefix { !$0.hasPrefix("-") }.map { URL(fileURLWithPath: $0, isDirectory: true) }
     MainActor.assumeIsolated { WorkerSelfTest.run(folders: Array(folders)) }

@@ -1,5 +1,6 @@
 import AVFoundation
 import MeetingNotesCore
+import MeetingNotesUI
 
 /// Captures the default input device through an `AVAudioEngine` input tap into a sink.
 /// Pausing stops the engine, so the system microphone indicator turns off.
@@ -65,7 +66,7 @@ final class MicRecorder {
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
-            throw AppError("No microphone input device available")
+            throw AppError(tr(.errNoMicDevice))
         }
         let sink = self.sink
         input.installTap(onBus: 0, bufferSize: 4096, format: nil) { buffer, time in
@@ -95,9 +96,9 @@ final class MicRecorder {
         engine.stop()
         do {
             try startEngine()
-            onWarning?("Microphone input changed during recording; the gap was filled with silence.")
+            onWarning?(tr(.warnMicDeviceChanged))
         } catch {
-            onWarning?("Microphone stopped after an input device change: \(error.localizedDescription)")
+            onWarning?(tr(.warnMicStoppedAfterChange, error.localizedDescription))
         }
     }
 }

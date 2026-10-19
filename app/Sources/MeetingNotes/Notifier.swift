@@ -1,4 +1,6 @@
 import AppKit
+import MeetingNotesCore
+import MeetingNotesUI
 import UserNotifications
 
 /// Optional "Notes ready" notifications. Never asks for permission by itself (onboarding does).
@@ -18,14 +20,20 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         ])
     }
 
-    /// Main-queue callback with the current authorization status (nil when unavailable, e.g. unbundled).
-    func status(_ completion: @escaping (UNAuthorizationStatus?) -> Void) {
+    /// Main-queue callback with the current authorization status (`.unavailable` when unbundled).
+    func status(_ completion: @escaping (PermissionStatus) -> Void) {
         guard let center else {
-            completion(nil)
+            completion(.unavailable)
             return
         }
         center.getNotificationSettings { settings in
-            let status = settings.authorizationStatus
+            let status: PermissionStatus
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral: status = .granted
+            case .denied: status = .denied
+            case .notDetermined: status = .notDetermined
+            @unknown default: status = .unavailable
+            }
             DispatchQueue.main.async { completion(status) }
         }
     }
@@ -45,8 +53,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         center.getNotificationSettings { settings in
             guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
             let content = UNMutableNotificationContent()
-            content.title = "Notes ready: \(title)"
-            content.body = "Click to open the notes."
+            content.title = tr(.notesReadyFor, title)
+            content.body = tr(.notificationBody)
             content.userInfo = ["folder": folder.path]
             content.categoryIdentifier = Self.notesCategory
             center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))

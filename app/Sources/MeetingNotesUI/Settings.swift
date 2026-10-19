@@ -2,69 +2,73 @@ import Foundation
 import MeetingNotesCore
 import ServiceManagement
 
-struct AppError: LocalizedError {
-    let message: String
-    init(_ message: String) { self.message = message }
-    var errorDescription: String? { message }
+public struct AppError: LocalizedError {
+    public let message: String
+    public init(_ message: String) { self.message = message }
+    public var errorDescription: String? { message }
 }
 
-enum AppInfo {
-    static let bundleID = "com.hoangphu.meetingnotes"
+public enum AppInfo {
+    public static let bundleID = "com.hoangphu.meetingnotes"
 
-    static var info: [String: Any] { Bundle.main.infoDictionary ?? [:] }
+    public static var info: [String: Any] { Bundle.main.infoDictionary ?? [:] }
 
-    static var versionString: String {
+    public static var versionString: String {
         let version = info["CFBundleShortVersionString"] as? String ?? "dev"
         let build = info["CFBundleVersion"] as? String ?? "0"
         return "\(version) (\(build))"
     }
 
     /// True when running from the assembled .app bundle (needed for notifications and login items).
-    static var isBundled: Bool { Bundle.main.bundleIdentifier != nil && Bundle.main.bundlePath.hasSuffix(".app") }
+    public static var isBundled: Bool { Bundle.main.bundleIdentifier != nil && Bundle.main.bundlePath.hasSuffix(".app") }
 
-    static var supportDir: URL {
+    public static var supportDir: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/MeetingNotes", isDirectory: true)
     }
 
-    static var stateFile: URL { supportDir.appendingPathComponent("state.json") }
+    public static var stateFile: URL { supportDir.appendingPathComponent("state.json") }
 
-    static var logsDir: URL {
+    public static var logsDir: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/MeetingNotes", isDirectory: true)
     }
 }
 
 /// User preferences in `UserDefaults` (domain `com.hoangphu.meetingnotes`).
-enum Settings {
-    enum Key {
-        static let notesDir = "notesDir"
-        static let detection = "meetingDetection"
-        static let hotkey = "hotkey"
-        static let pauseHotkey = "pauseHotkey"
-        static let pipelineDir = "pipelineDir"
-        static let uvPath = "uvPath"
-        static let showInDock = "showInDock"
-        static let showIdlePill = "showIdlePill"
-        static let pillHiddenUntil = "pillHiddenUntil"
-        static let pillAnchorX = "pillAnchorX"
-        static let pillAnchorY = "pillAnchorY"
-        static let createNotesMode = "createNotesMode"
-        static let summaryModel = "summaryModel"
-        static let autoStopSilenceMinutes = "autoStopSilenceMinutes"
-        static let autoStopOnCallEnd = "autoStopOnCallEnd"
-        static let detectionSnoozeUntil = "detectionSnoozeUntil"
-        static let onboardingDone = "onboardingDone"
-        static let permissionsWereGranted = "permissionsWereGranted"
-        static let lastNotesFolder = "lastNotesFolder"
+public enum Settings {
+    public enum Key {
+        public static let notesDir = "notesDir"
+        public static let detection = "meetingDetection"
+        public static let hotkey = "hotkey"
+        public static let pauseHotkey = "pauseHotkey"
+        public static let pipelineDir = "pipelineDir"
+        public static let uvPath = "uvPath"
+        public static let showInDock = "showInDock"
+        public static let showIdlePill = "showIdlePill"
+        public static let pillHiddenUntil = "pillHiddenUntil"
+        public static let pillAnchorX = "pillAnchorX"
+        public static let pillAnchorY = "pillAnchorY"
+        public static let createNotesMode = "createNotesMode"
+        public static let summaryModel = "summaryModel"
+        public static let autoStopSilenceMinutes = "autoStopSilenceMinutes"
+        public static let autoStopOnCallEnd = "autoStopOnCallEnd"
+        public static let detectionSnoozeUntil = "detectionSnoozeUntil"
+        public static let onboardingDone = "onboardingDone"
+        public static let permissionsWereGranted = "permissionsWereGranted"
+        public static let lastNotesFolder = "lastNotesFolder"
+        public static let uiLanguage = "uiLanguage"
+        public static let showRecordingPill = "showRecordingPill"
     }
 
     private static var defaults: UserDefaults { .standard }
 
-    static func registerDefaults() {
+    public static func registerDefaults() {
         defaults.register(defaults: [
             Key.detection: true,
             Key.showInDock: true,
-            Key.showIdlePill: true,
+            Key.showIdlePill: false,
+            Key.showRecordingPill: true,
+            Key.uiLanguage: UILanguage.vi.rawValue,
             Key.createNotesMode: CreateNotesMode.rightAway.rawValue,
             Key.summaryModel: SummaryModel.light.rawValue,
             Key.autoStopSilenceMinutes: 15,
@@ -72,11 +76,11 @@ enum Settings {
         ])
     }
 
-    static var defaultNotesDir: URL {
+    public static var defaultNotesDir: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("MeetingNotes", isDirectory: true)
     }
 
-    static var notesDir: URL {
+    public static var notesDir: URL {
         get {
             guard let path = nonEmpty(defaults.string(forKey: Key.notesDir)) else { return defaultNotesDir }
             return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
@@ -90,25 +94,38 @@ enum Settings {
         }
     }
 
-    static var detectionEnabled: Bool {
+    public static var detectionEnabled: Bool {
         get { defaults.bool(forKey: Key.detection) }
         set { defaults.set(newValue, forKey: Key.detection) }
     }
 
-    static var hotkey: String { nonEmpty(defaults.string(forKey: Key.hotkey)) ?? HotKeySpec.defaultRecord }
-    static var pauseHotkey: String { nonEmpty(defaults.string(forKey: Key.pauseHotkey)) ?? HotKeySpec.defaultPause }
+    public static var hotkey: String { nonEmpty(defaults.string(forKey: Key.hotkey)) ?? HotKeySpec.defaultRecord }
+    public static var pauseHotkey: String { nonEmpty(defaults.string(forKey: Key.pauseHotkey)) ?? HotKeySpec.defaultPause }
 
-    static var showInDock: Bool {
+    public static var showInDock: Bool {
         get { defaults.bool(forKey: Key.showInDock) }
         set { defaults.set(newValue, forKey: Key.showInDock) }
     }
 
-    static var showIdlePill: Bool {
+    /// UI language; Vietnamese unless the user picked English.
+    public static var uiLanguage: UILanguage {
+        get { UILanguage(rawValue: defaults.string(forKey: Key.uiLanguage) ?? "") ?? .vi }
+        set { defaults.set(newValue.rawValue, forKey: Key.uiLanguage) }
+    }
+
+    /// "Show floating control while recording" (also while saving and writing notes).
+    public static var showRecordingPill: Bool {
+        get { defaults.bool(forKey: Key.showRecordingPill) }
+        set { defaults.set(newValue, forKey: Key.showRecordingPill) }
+    }
+
+    /// "Show floating control when idle".
+    public static var showIdlePill: Bool {
         get { defaults.bool(forKey: Key.showIdlePill) }
         set { defaults.set(newValue, forKey: Key.showIdlePill) }
     }
 
-    static var pillHiddenUntil: Date? {
+    public static var pillHiddenUntil: Date? {
         get {
             let value = defaults.double(forKey: Key.pillHiddenUntil)
             return value > 0 ? Date(timeIntervalSince1970: value) : nil
@@ -117,7 +134,7 @@ enum Settings {
     }
 
     /// Bottom-center point of the pill in screen coordinates.
-    static var pillAnchor: CGPoint? {
+    public static var pillAnchor: CGPoint? {
         get {
             guard defaults.object(forKey: Key.pillAnchorX) != nil else { return nil }
             return CGPoint(x: defaults.double(forKey: Key.pillAnchorX), y: defaults.double(forKey: Key.pillAnchorY))
@@ -133,28 +150,28 @@ enum Settings {
         }
     }
 
-    static var createNotesMode: CreateNotesMode {
+    public static var createNotesMode: CreateNotesMode {
         get { CreateNotesMode(rawValue: defaults.string(forKey: Key.createNotesMode) ?? "") ?? .rightAway }
         set { defaults.set(newValue.rawValue, forKey: Key.createNotesMode) }
     }
 
-    static var summaryModel: SummaryModel {
+    public static var summaryModel: SummaryModel {
         get { SummaryModel(rawValue: defaults.string(forKey: Key.summaryModel) ?? "") ?? .light }
         set { defaults.set(newValue.rawValue, forKey: Key.summaryModel) }
     }
 
     /// 0 = off.
-    static var autoStopSilenceMinutes: Int {
+    public static var autoStopSilenceMinutes: Int {
         get { max(0, defaults.integer(forKey: Key.autoStopSilenceMinutes)) }
         set { defaults.set(max(0, newValue), forKey: Key.autoStopSilenceMinutes) }
     }
 
-    static var autoStopOnCallEnd: Bool {
+    public static var autoStopOnCallEnd: Bool {
         get { defaults.bool(forKey: Key.autoStopOnCallEnd) }
         set { defaults.set(newValue, forKey: Key.autoStopOnCallEnd) }
     }
 
-    static var detectionSnoozeUntil: Date? {
+    public static var detectionSnoozeUntil: Date? {
         get {
             let value = defaults.double(forKey: Key.detectionSnoozeUntil)
             return value > 0 ? Date(timeIntervalSince1970: value) : nil
@@ -162,30 +179,30 @@ enum Settings {
         set { defaults.set(newValue?.timeIntervalSince1970 ?? 0, forKey: Key.detectionSnoozeUntil) }
     }
 
-    static var onboardingDone: Bool {
+    public static var onboardingDone: Bool {
         get { defaults.bool(forKey: Key.onboardingDone) }
         set { defaults.set(newValue, forKey: Key.onboardingDone) }
     }
 
-    static var permissionsWereGranted: Bool {
+    public static var permissionsWereGranted: Bool {
         get { defaults.bool(forKey: Key.permissionsWereGranted) }
         set { defaults.set(newValue, forKey: Key.permissionsWereGranted) }
     }
 
-    static var lastNotesFolder: URL? {
+    public static var lastNotesFolder: URL? {
         get { nonEmpty(defaults.string(forKey: Key.lastNotesFolder)).map { URL(fileURLWithPath: $0, isDirectory: true) } }
         set { defaults.set(newValue?.path, forKey: Key.lastNotesFolder) }
     }
 
     /// Pipeline project dir: defaults override, then Info.plist `MNPipelineDir`, then `MN_PIPELINE_DIR`.
-    static var pipelineDir: String? {
+    public static var pipelineDir: String? {
         nonEmpty(defaults.string(forKey: Key.pipelineDir))
             ?? nonEmpty(AppInfo.info["MNPipelineDir"] as? String)
             ?? nonEmpty(ProcessInfo.processInfo.environment["MN_PIPELINE_DIR"])
     }
 
     /// uv binary: defaults override, then Info.plist `MNUvPath`, then Homebrew.
-    static var uvPath: String {
+    public static var uvPath: String {
         nonEmpty(defaults.string(forKey: Key.uvPath))
             ?? nonEmpty(AppInfo.info["MNUvPath"] as? String)
             ?? "/opt/homebrew/bin/uv"
@@ -197,23 +214,23 @@ enum Settings {
     }
 }
 
-enum LoginItem {
-    static var isEnabled: Bool {
+public enum LoginItem {
+    public static var isEnabled: Bool {
         let status = SMAppService.mainApp.status
         return status == .enabled || status == .requiresApproval
     }
 
-    static var statusText: String {
+    public static var statusText: String {
         switch SMAppService.mainApp.status {
-        case .enabled: return "Enabled"
-        case .requiresApproval: return "Needs approval in System Settings › General › Login Items"
-        case .notRegistered: return "Off"
-        case .notFound: return "Unavailable (run the installed app from ~/Applications)"
-        @unknown default: return "Unknown"
+        case .enabled: return tr(.loginEnabled)
+        case .requiresApproval: return tr(.loginNeedsApproval)
+        case .notRegistered: return tr(.loginOff)
+        case .notFound: return tr(.loginUnavailable)
+        @unknown default: return tr(.loginUnknown)
         }
     }
 
-    static func set(_ enabled: Bool) throws {
+    public static func set(_ enabled: Bool) throws {
         if enabled {
             try SMAppService.mainApp.register()
         } else {

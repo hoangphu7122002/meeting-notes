@@ -1,5 +1,6 @@
 import AVFoundation
 import MeetingNotesCore
+import MeetingNotesUI
 
 /// One meeting recording: microphone + system audio into a meeting folder, plus `meeting.json`.
 /// Both tracks are positioned in recorded time by a shared `RecordingClock`, so pausing
@@ -7,13 +8,13 @@ import MeetingNotesCore
 @MainActor
 final class RecordingSession {
     struct Options {
-        var title = "Meeting"
+        var title = tr(.defaultMeetingTitle)
         var titleSource = "default"
         var appHint: String?
 
         static func from(appHint: String?) -> Options {
             guard let appHint else { return Options() }
-            return Options(title: "\(appHint) meeting", titleSource: "app", appHint: appHint)
+            return Options(title: tr(.appMeetingTitle, appHint), titleSource: "app", appHint: appHint)
         }
     }
 
@@ -85,10 +86,10 @@ final class RecordingSession {
                 mic = recorder
                 micWriter = writer
             } catch {
-                warnings.append("Microphone unavailable: \(error.localizedDescription)")
+                warnings.append(tr(.warnMicUnavailable, error.localizedDescription))
             }
         } else {
-            warnings.append("Microphone access denied (System Settings › Privacy & Security › Microphone); recording system audio only.")
+            warnings.append(tr(.warnMicDenied))
         }
 
         var system: SystemAudioCapture?
@@ -100,11 +101,11 @@ final class RecordingSession {
             system = capture
             systemWriter = writer
         } catch {
-            warnings.append("System audio not recorded: \(error.localizedDescription)")
+            warnings.append(tr(.warnSystemNotRecorded, error.localizedDescription))
         }
 
         guard mic != nil || system != nil else {
-            throw AppError("No audio source could be started. " + warnings.joined(separator: " "))
+            throw AppError(tr(.errNoAudioSource, warnings.joined(separator: " ")))
         }
 
         var record = MeetingRecord(title: options.title, titleSource: options.titleSource, appHint: options.appHint, startedAt: startedAt)
@@ -151,9 +152,9 @@ final class RecordingSession {
         guard !finished, clock.resume(atHost: HostClock.now()) else { return }
         let mic = self.mic, system = self.system
         enqueue { [weak self] in
-            do { try mic?.resume() } catch { self?.addWarning("Microphone could not resume: \(error.localizedDescription)") }
+            do { try mic?.resume() } catch { self?.addWarning(tr(.warnMicResume, error.localizedDescription)) }
             do { try await system?.resume() } catch {
-                self?.addWarning("System audio could not resume: \(error.localizedDescription)")
+                self?.addWarning(tr(.warnSystemResume, error.localizedDescription))
             }
         }
         writeMeetingJSON()
@@ -172,12 +173,12 @@ final class RecordingSession {
         var tracks: [String: Track] = [:]
         if let mic, let micWriter {
             let stats = micWriter.finish(endTime: end)
-            check(stats, name: "Microphone", file: "mic.wav", silentWarning: true)
+            check(stats, name: tr(.microphone), file: "mic.wav", silentWarning: true)
             tracks["mic"] = track(stats, file: "mic.wav", device: mic.deviceName)
         }
         if let systemWriter {
             let stats = systemWriter.finish(endTime: end)
-            check(stats, name: "System audio", file: "system.wav", silentWarning: false)
+            check(stats, name: tr(.systemAudio), file: "system.wav", silentWarning: false)
             tracks["system"] = track(stats, file: "system.wav", device: nil)
         }
         record.endedAt = ended
@@ -223,13 +224,13 @@ final class RecordingSession {
 
     private func check(_ stats: TrackWriter.Stats, name: String, file: String, silentWarning: Bool) {
         if let error = stats.error {
-            addWarning("\(name): writing \(file) failed: \(error)")
+            addWarning(tr(.warnTrackWriteFailed, name, file, "\(error)"))
         }
         if stats.frames == 0 {
-            addWarning("\(name) produced no audio; track omitted.")
+            addWarning(tr(.warnTrackNoAudio, name))
             try? FileManager.default.removeItem(at: folder.appendingPathComponent(file))
         } else if silentWarning && stats.peak == 0 {
-            addWarning("\(name) track is completely silent (check permission or input device).")
+            addWarning(tr(.warnTrackSilent, name))
         }
     }
 
@@ -258,7 +259,7 @@ final class RecordingSession {
         do {
             try record.jsonData().write(to: folder.appendingPathComponent("meeting.json"), options: .atomic)
         } catch {
-            addWarning("Could not write meeting.json: \(error.localizedDescription)")
+            addWarning(tr(.warnMeetingJSON, error.localizedDescription))
         }
     }
 }

@@ -33,9 +33,10 @@ public enum RecorderEvent: Equatable, Sendable {
 
 public struct RecorderOutcome: Equatable, Sendable {
     public var effect: RecorderEffect
-    public var toast: String?
+    /// Message for surfaces that do not show the state themselves (hotkeys, menus, URLs).
+    public var toast: Tr?
 
-    public init(_ effect: RecorderEffect, toast: String? = nil) {
+    public init(_ effect: RecorderEffect, toast: Tr? = nil) {
         self.effect = effect
         self.toast = toast
     }
@@ -68,15 +69,15 @@ public struct RecorderMachine: Equatable, Sendable {
                 phase = .starting
                 return RecorderOutcome(.startCapture)
             case .starting, .recording, .paused:
-                return RecorderOutcome(.none, toast: "Already recording")
+                return RecorderOutcome(.none, toast: .toastAlreadyRecording)
             case .stopping:
-                return RecorderOutcome(.none, toast: "Still saving the last recording")
+                return RecorderOutcome(.none, toast: .toastStillSaving)
             }
         case .stop:
-            guard phase.isActive else { return RecorderOutcome(.none, toast: phase == .idle ? "Not recording" : nil) }
+            guard phase.isActive else { return RecorderOutcome(.none, toast: phase == .idle ? .toastNotRecording : nil) }
             phase = .stopping
             confirmingDiscard = false
-            return RecorderOutcome(.stopCapture, toast: "Stopped – creating notes…")
+            return RecorderOutcome(.stopCapture, toast: .toastStoppedCreating)
         case .toggleRecording:
             switch phase {
             case .idle: return handle(.start)
@@ -87,23 +88,23 @@ public struct RecorderMachine: Equatable, Sendable {
             switch phase {
             case .recording:
                 phase = .paused
-                return RecorderOutcome(.pauseCapture, toast: "Paused")
-            case .paused: return RecorderOutcome(.none, toast: "Already paused")
-            default: return RecorderOutcome(.none, toast: "Not recording")
+                return RecorderOutcome(.pauseCapture, toast: .toastPaused)
+            case .paused: return RecorderOutcome(.none, toast: .toastAlreadyPaused)
+            default: return RecorderOutcome(.none, toast: .toastNotRecording)
             }
         case .resume:
             switch phase {
             case .paused:
                 phase = .recording
-                return RecorderOutcome(.resumeCapture, toast: "Resumed")
-            case .recording: return RecorderOutcome(.none, toast: "Already recording")
-            default: return RecorderOutcome(.none, toast: "Not recording")
+                return RecorderOutcome(.resumeCapture, toast: .toastResumed)
+            case .recording: return RecorderOutcome(.none, toast: .toastAlreadyRecording)
+            default: return RecorderOutcome(.none, toast: .toastNotRecording)
             }
         case .togglePause:
             switch phase {
             case .recording: return handle(.pause)
             case .paused: return handle(.resume)
-            default: return RecorderOutcome(.none, toast: "Not recording")
+            default: return RecorderOutcome(.none, toast: .toastNotRecording)
             }
         case .requestDiscard:
             guard phase.isActive else { return RecorderOutcome(.none) }

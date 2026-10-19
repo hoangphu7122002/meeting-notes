@@ -1,5 +1,6 @@
 import AppKit
 import MeetingNotesCore
+import MeetingNotesUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -13,34 +14,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         signal(SIGPIPE, SIG_IGN)  // a dead worker must not kill the app when we write to its stdin
         Settings.registerDefaults()
+        LanguageModel.shared.set(Settings.uiLanguage)
         NSApp.setActivationPolicy(Settings.showInDock ? .regular : .accessory)
         NSAppleEventManager.shared().setEventHandler(
             self, andSelector: #selector(handleURLEvent(_:reply:)),
             forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
-        let delegate = RecordingMenuDelegate(controller: controller, hub: { [weak self] in self?.hub })
-        recordingMenuDelegate = delegate
+        recordingMenuDelegate = RecordingMenuDelegate(controller: controller, hub: { [weak self] in self?.hub })
+        buildMainMenu()
+    }
+
+    private func buildMainMenu() {
+        guard let recordingMenuDelegate else { return }
         NSApp.mainMenu = MenuFactory.mainMenu(controller: controller, hubProvider: { [weak self] in self?.hub },
-                                              recordingDelegate: delegate)
+                                              recordingDelegate: recordingMenuDelegate)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.applicationIconImage = AppIcon.image
         let hub = UIHub(controller: controller)
         self.hub = hub
+        hub.onLanguageChanged = { [weak self] in self?.buildMainMenu() }
         controller.ui = hub
+        controller.state.showGettingStarted = !Settings.onboardingDone
         controller.launch()
         hub.start()
-        if !Settings.onboardingDone || controller.refreshPermissions() {
-            hub.showOnboarding()
-        }
+        // The main window is the app's home (it also holds the permission checklist on first launch).
+        hub.showMainWindow()
         let pending = pendingURLs
         pendingURLs = []
         pending.forEach(controller.handle)
     }
 
-    /// Dock icon click, `open -a MeetingNotes`, Finder/Spotlight while running: show the pill.
+    /// Dock icon click, `open -a MeetingNotes`, Finder/Spotlight while running: show the main window.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        hub?.showControls(expand: true)
+        hub?.showMainWindow()
         return false
     }
 
@@ -72,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func handleURLEvent(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
         guard let text = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue else { return }
         guard let command = URLCommand(string: text) else {
-            hub?.showToast("Unknown command: \(text)")
+            hub?.showToast(tr(.toastUnknownCommand, text))
             return
         }
         if hub == nil {

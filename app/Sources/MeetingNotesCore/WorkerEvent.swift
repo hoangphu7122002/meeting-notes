@@ -95,7 +95,17 @@ public struct StageProgress: Equatable, Sendable {
     public var elapsedSec: Double?
     public var fraction: Double = 0
 
-    public var title: String { name.prefix(1).uppercased() + name.dropFirst() }
+    public func title(_ lang: UILanguage = L10n.language) -> String {
+        switch name {
+        case "prepare": return tr(.stagePrepare, lang: lang)
+        case "diarize": return tr(.stageDiarize, lang: lang)
+        case "transcribe": return tr(.stageTranscribe, lang: lang)
+        case "summarize": return tr(.stageSummarize, lang: lang)
+        case "render": return tr(.stageRender, lang: lang)
+        case "finalize": return tr(.stageFinalize, lang: lang)
+        default: return name.prefix(1).uppercased() + name.dropFirst()
+        }
+    }
 }
 
 /// Live state of one processing job, folded from worker events.
@@ -215,13 +225,13 @@ public enum JobOutcome: Equatable, Sendable {
         switch exit {
         case 0:
             if case let .done(_, folder, notes, title, _)? = done { return .done(folder: folder, notes: notes, title: title) }
-            return .failed(message: "The pipeline finished without notes")
+            return .failed(message: tr(.errNoNotesProduced))
         case 3:
             return .cancelled
         case 2:
-            return .failed(message: lastError ?? "The pipeline rejected the request")
+            return .failed(message: lastError ?? tr(.errPipelineRejected))
         default:
-            return .failed(message: lastError ?? "Processing failed (exit \(exit)); see pipeline.app.log")
+            return .failed(message: lastError ?? tr(.errPipelineExit, exit))
         }
     }
 }

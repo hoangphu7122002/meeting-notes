@@ -1,138 +1,57 @@
 import AppKit
 import MeetingNotesCore
+import MeetingNotesUI
 import SwiftUI
-
-/// Borderless, non-activating floating panel on all Spaces (incl. full-screen ones).
-/// It becomes key only when a text field inside needs it (`becomesKeyOnlyIfNeeded`), so clicking
-/// buttons never takes keyboard focus from the frontmost app.
-final class FloatingPanel: NSPanel {
-    init(size: CGSize = CGSize(width: 120, height: 36)) {
-        super.init(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
-                   backing: .buffered, defer: true)
-        level = .statusBar
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        hidesOnDeactivate = false
-        isFloatingPanel = true
-        becomesKeyOnlyIfNeeded = true
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        isMovable = false
-        isReleasedWhenClosed = false
-        animationBehavior = .none
-    }
-
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-}
-
-/// Hosting view with an always-active hover tracking area and first-click delivery.
-final class PanelHostingView<Content: View>: NSHostingView<Content> {
-    var onHover: ((Bool) -> Void)?
-    private var trackingArea: NSTrackingArea?
-
-    required init(rootView: Content) {
-        super.init(rootView: rootView)
-        sizingOptions = []
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let trackingArea { removeTrackingArea(trackingArea) }
-        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
-        addTrackingArea(area)
-        trackingArea = area
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        super.mouseEntered(with: event)
-        onHover?(true)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        super.mouseExited(with: event)
-        onHover?(false)
-    }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override var needsPanelToBecomeKey: Bool { false }
-}
-
-struct SizeKey: PreferenceKey {
-    static let defaultValue = CGSize.zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
-}
-
-extension View {
-    /// Reports the view's ideal size (used to fit panels to their content).
-    func reportSize(_ action: @escaping (CGSize) -> Void) -> some View {
-        fixedSize()
-            .background(GeometryReader { proxy in Color.clear.preference(key: SizeKey.self, value: proxy.size) })
-            .onPreferenceChange(SizeKey.self) { size in action(size) }
-    }
-}
 
 // MARK: - Pill window
 
-@MainActor
-final class PillUIModel: ObservableObject {
-    @Published var expanded = false
-    @Published var editingTitle = false
-}
-
-/// The bottom-center pill: positioning, dragging, hover expand/collapse, visibility, level sampling.
+/// The bottom-center pill: sizing, positioning, dragging, hover expand/collapse, visibility, meters.
+///
+/// Sizing: the panel always takes the hosting view's `fittedSize` (the SwiftUI content's ideal size).
+/// The content reports every size change (state, warnings, title, language) through
+/// `onFittingSizeChange`; the panel is then re-anchored so its bottom-center stays fixed.
 @MainActor
 final class PillWindowController {
     let panel = FloatingPanel()
     let ui = PillUIModel()
     private let controller: AppController
-    private var hosting: PanelHostingView<PillRootView>!
-    private var size = CGSize(width: 120, height: 36)
+    private var hosting: FittingHostingView<PillRootView>!
+    private var size = CGSize(width: PillLayout.collapsedMinWidth, height: PillLayout.collapsedHeight)
     private var anchor: CGPoint
     private var hovering = false
     private var expandWork: DispatchWorkItem?
     private var collapseWork: DispatchWorkItem?
+    private var resizeScheduled = false
     private var dragStart: (mouse: CGPoint, anchor: CGPoint)?
-    private var levelTimer: Timer?
-    /// Shown on launch/reopen even when the idle pill is disabled; cleared on collapse.
+    /// Shown from the menu even when the settings hide it; cleared on collapse.
     private var forcedVisible = false
-    private var occlusionObserver: NSObjectProtocol?
-    private var resignKeyObserver: NSObjectProtocol?
-    private var screenObserver: NSObjectProtocol?
+    private var observers: [NSObjectProtocol] = []
 
     init(controller: AppController) {
         self.controller = controller
         anchor = Self.defaultAnchor()
         if let saved = Settings.pillAnchor, Self.isOnScreen(saved) { anchor = saved }
         let actions = PillActions(
-            sizeChanged: { [weak self] size in
-                // Resize after SwiftUI's update pass (avoids re-entrant layout of the hosting view).
-                DispatchQueue.main.async { MainActor.assumeIsolated { self?.setSize(size) } }
-            },
+            sizeChanged: { [weak self] _ in self?.scheduleResize() },
             expand: { [weak self] in self?.expand() },
             collapse: { [weak self] in self?.collapse() },
             dragChanged: { [weak self] in self?.dragChanged() },
             dragEnded: { [weak self] in self?.dragEnded() },
             editingChanged: { [weak self] in self?.editingChanged($0) })
-        hosting = PanelHostingView(rootView: PillRootView(app: controller, ui: ui, clock: controller.clock,
-                                                          levels: controller.levels, actions: actions))
+        hosting = FittingHostingView(rootView: PillRootView(state: controller.state, ui: ui, commands: controller, actions: actions))
         hosting.onHover = { [weak self] inside in self?.hoverChanged(inside) }
         panel.contentView = hosting
-        occlusionObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didChangeOcclusionStateNotification, object: panel, queue: .main
-        ) { [weak self] _ in MainActor.assumeIsolated { self?.updateLevelTimer() } }
-        resignKeyObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didResignKeyNotification, object: panel, queue: .main
-        ) { [weak self] _ in
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: panel, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateMeters() }
+        })
+        observers.append(center.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
             // Clicking another app ends title editing (commits it).
             MainActor.assumeIsolated { if self?.ui.editingTitle == true { self?.panel.makeFirstResponder(nil) } }
-        }
-        screenObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
-        ) { [weak self] _ in MainActor.assumeIsolated { self?.screensChanged() } }
+        })
+        observers.append(center.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.screensChanged() }
+        })
     }
 
     /// Called after the panel moved or resized.
@@ -142,11 +61,22 @@ final class PillWindowController {
     var isVisible: Bool { panel.isVisible }
     var frame: NSRect { panel.frame }
 
-    /// Applies visibility for the current state.
+    /// Where the collapsed pill is (or would be when shown): toasts and cards are placed above it.
+    var restingFrame: NSRect {
+        if panel.isVisible { return panel.frame }
+        let collapsed = CGSize(width: PillLayout.collapsedMinWidth, height: PillLayout.collapsedHeight)
+        return PillLayout.frame(size: collapsed, anchor: anchor, visible: Self.screen(containing: anchor)?.visibleFrame)
+    }
+
+    /// Applies visibility for the current state and settings.
     func update() {
-        let shouldShow = !controller.pill.isIdle || controller.idlePillAllowed || forcedVisible || ui.expanded
+        let idleHidden = Settings.pillHiddenUntil.map { $0 > Date() } ?? false
+        let shouldShow = PillVisibility.shouldShow(controller.pill, showWhileRecording: Settings.showRecordingPill,
+                                                   showWhenIdle: Settings.showIdlePill, idleHidden: idleHidden,
+                                                   forced: forcedVisible || ui.expanded)
         if shouldShow {
             if !panel.isVisible {
+                resizeToFit()
                 place()
                 panel.orderFrontRegardless()
             }
@@ -154,20 +84,18 @@ final class PillWindowController {
             panel.orderOut(nil)
             hovering = false
         }
-        updateLevelTimer()
+        updateMeters()
     }
 
-    /// Brings the pill to front; `expand` opens it briefly (launch, Dock click, `open -a`).
+    /// Brings the pill to front (menu "Show floating control"); `expand` opens it briefly.
     func show(expand: Bool) {
         controller.unhidePill()
         forcedVisible = true
-        place()
-        panel.orderFrontRegardless()
+        update()
         if expand {
             self.expand()
             scheduleCollapse(after: 4)
         }
-        update()
     }
 
     func resetPosition() {
@@ -246,24 +174,31 @@ final class PillWindowController {
 
     // MARK: - Geometry
 
-    private func setSize(_ newSize: CGSize) {
-        guard newSize.width > 0, newSize.height > 0 else { return }
-        let rounded = CGSize(width: ceil(newSize.width), height: ceil(newSize.height))
-        guard rounded != size else { return }
-        size = rounded
+    /// Coalesces size reports of one SwiftUI update pass into one resize after it.
+    private func scheduleResize() {
+        guard !resizeScheduled else { return }
+        resizeScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                self?.resizeScheduled = false
+                self?.resizeToFit()
+            }
+        }
+    }
+
+    private func resizeToFit() {
+        let fitted = hosting.fittedSize
+        guard fitted != size else { return }
+        size = fitted
         place()
     }
 
     /// Frame from the bottom-center anchor, kept inside the screen's visible frame.
     private func place() {
-        var origin = CGPoint(x: anchor.x - size.width / 2, y: anchor.y)
-        if let visible = Self.screen(containing: anchor)?.visibleFrame {
-            origin.x = min(max(origin.x, visible.minX + 4), visible.maxX - size.width - 4)
-            origin.y = min(max(origin.y, visible.minY + 2), visible.maxY - size.height - 2)
-        }
-        let frame = NSRect(origin: origin, size: size)
+        let frame = PillLayout.frame(size: size, anchor: anchor, visible: Self.screen(containing: anchor)?.visibleFrame)
         if panel.frame != frame {
             panel.setFrame(frame, display: true)
+            panel.invalidateShadow()
             onFrameChange?(frame)
         }
     }
@@ -304,48 +239,29 @@ final class PillWindowController {
         NSScreen.screens.contains { $0.visibleFrame.insetBy(dx: -20, dy: -20).contains(point) }
     }
 
-    // MARK: - Levels (only while visible and recording)
+    // MARK: - Meters (only while visible)
 
-    private func updateLevelTimer() {
-        let needed = controller.machine.phase == .recording && panel.isVisible && panel.occlusionState.contains(.visible)
-        if needed, levelTimer == nil {
-            let timer = Timer(timeInterval: 1.0 / 12, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.controller.sampleLevels() }
-            }
-            timer.tolerance = 0.03
-            RunLoop.main.add(timer, forMode: .common)
-            levelTimer = timer
-        } else if !needed, let timer = levelTimer {
-            timer.invalidate()
-            levelTimer = nil
-            controller.sampleLevels()  // resets to 0 when not recording
-        }
+    private func updateMeters() {
+        controller.setMeterVisible("pill", panel.isVisible && panel.occlusionState.contains(.visible))
     }
 }
 
 // MARK: - Toast
 
-@MainActor
-final class ToastModel: ObservableObject {
-    @Published var text = ""
-}
-
-/// Brief HUD message above the pill (~1.5 s, one fade, no loops).
+/// Brief message above the pill (~1.5 s, one fade, no loops).
 @MainActor
 final class ToastPanel {
     private let panel = FloatingPanel()
     private let model = ToastModel()
+    private var hosting: FittingHostingView<ToastView>!
     private var hideWork: DispatchWorkItem?
-    private var size = CGSize(width: 160, height: 30)
     private var anchorFrame: NSRect = .zero
 
     init() {
         panel.ignoresMouseEvents = true
-        panel.hasShadow = false
-        let view = ToastView(model: model, sizeChanged: { [weak self] size in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.sizeChanged(size) } }
-        })
-        let hosting = PanelHostingView(rootView: view)
+        hosting = FittingHostingView(rootView: ToastView(model: model, sizeChanged: { [weak self] _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.place() } }
+        }))
         panel.contentView = hosting
     }
 
@@ -355,6 +271,8 @@ final class ToastPanel {
         place()
         panel.alphaValue = 1
         panel.orderFrontRegardless()
+        // The new text is laid out in the next update pass; re-fit after it.
+        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.place() } }
         hideWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
@@ -368,38 +286,18 @@ final class ToastPanel {
             }
         }
         hideWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
-    }
-
-    private func sizeChanged(_ newSize: CGSize) {
-        size = CGSize(width: ceil(newSize.width), height: ceil(newSize.height))
-        place()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8, execute: work)
     }
 
     private func place() {
-        var origin = CGPoint(x: anchorFrame.midX - size.width / 2, y: anchorFrame.maxY + 8)
-        if let visible = (NSScreen.screens.first { $0.frame.contains(CGPoint(x: anchorFrame.midX, y: anchorFrame.minY)) } ?? NSScreen.main)?.visibleFrame {
-            origin.x = min(max(origin.x, visible.minX + 4), visible.maxX - size.width - 4)
-            origin.y = min(origin.y, visible.maxY - size.height - 4)
+        let size = hosting.fittedSize
+        let anchor = CGPoint(x: anchorFrame.midX, y: anchorFrame.maxY + 8)
+        let screen = NSScreen.screens.first { $0.frame.contains(CGPoint(x: anchorFrame.midX, y: anchorFrame.minY)) } ?? NSScreen.main
+        let frame = PillLayout.frame(size: size, anchor: anchor, visible: screen?.visibleFrame)
+        if panel.frame != frame {
+            panel.setFrame(frame, display: true)
+            panel.invalidateShadow()
         }
-        panel.setFrame(NSRect(origin: origin, size: size), display: true)
-    }
-}
-
-struct ToastView: View {
-    @ObservedObject var model: ToastModel
-    let sizeChanged: (CGSize) -> Void
-
-    var body: some View {
-        Text(model.text)
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .background(Capsule().fill(Color.black.opacity(0.85)))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.15)))
-            .padding(2)
-            .reportSize(sizeChanged)
     }
 }
 
@@ -413,18 +311,21 @@ final class CardPanel {
         case above(NSRect)
     }
 
-    private let panel = FloatingPanel(size: CGSize(width: 320, height: 120))
+    private let panel = FloatingPanel(size: CGSize(width: 340, height: 120))
     private var placement = Placement.topRight
-    private var size = CGSize(width: 320, height: 120)
+    private var fittedSize: () -> CGSize = { CGSize(width: 340, height: 120) }
 
     var isVisible: Bool { panel.isVisible }
 
-    func show<Content: View>(_ content: Content, placement: Placement) {
+    /// `make` builds the card with the size callback to wire into its `onFittingSizeChange`.
+    func show<Content: View>(_ make: (@escaping (CGSize) -> Void) -> Content, placement: Placement) {
         self.placement = placement
-        let view = content.reportSize { [weak self] size in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.sizeChanged(size) } }
+        let content = make { [weak self] _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.place() } }
         }
-        panel.contentView = PanelHostingView(rootView: AnyView(view))
+        let hosting = FittingHostingView(rootView: content)
+        fittedSize = { [weak hosting] in hosting?.fittedSize ?? CGSize(width: 340, height: 120) }
+        panel.contentView = hosting
         place()
         panel.orderFrontRegardless()
     }
@@ -442,27 +343,24 @@ final class CardPanel {
             MainActor.assumeIsolated {
                 guard let self, !self.panel.isVisible else { return }
                 self.panel.contentView = nil
+                self.fittedSize = { CGSize(width: 340, height: 120) }
             }
         }
     }
 
-    private func sizeChanged(_ newSize: CGSize) {
-        size = CGSize(width: ceil(newSize.width), height: ceil(newSize.height))
-        place()
-    }
-
     private func place() {
-        let screen = NSScreen.main ?? NSScreen.screens.first
-        let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        var origin: CGPoint
+        let size = fittedSize()
+        let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let frame: CGRect
         switch placement {
         case .topRight:
-            origin = CGPoint(x: visible.maxX - size.width - 16, y: visible.maxY - size.height - 16)
-        case .above(let frame):
-            origin = CGPoint(x: frame.midX - size.width / 2, y: frame.maxY + 10)
-            origin.x = min(max(origin.x, visible.minX + 4), visible.maxX - size.width - 4)
-            origin.y = min(origin.y, visible.maxY - size.height - 4)
+            frame = CGRect(x: visible.maxX - size.width - 16, y: visible.maxY - size.height - 16, width: size.width, height: size.height)
+        case .above(let pill):
+            frame = PillLayout.frame(size: size, anchor: CGPoint(x: pill.midX, y: pill.maxY + 10), visible: visible)
         }
-        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+        if panel.frame != frame {
+            panel.setFrame(frame, display: true)
+            panel.invalidateShadow()
+        }
     }
 }

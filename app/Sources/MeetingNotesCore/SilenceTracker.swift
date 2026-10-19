@@ -42,11 +42,11 @@ public struct SilenceTracker: Equatable, Sendable {
 public enum CreateNotesMode: String, CaseIterable, Sendable {
     case rightAway, whenIdle, manual
 
-    public var title: String {
+    public func title(_ lang: UILanguage = L10n.language) -> String {
         switch self {
-        case .rightAway: return "Right away (low priority)"
-        case .whenIdle: return "When idle and plugged in"
-        case .manual: return "Manually"
+        case .rightAway: return tr(.modeRightAway, lang: lang)
+        case .whenIdle: return tr(.modeWhenIdle, lang: lang)
+        case .manual: return tr(.modeManual, lang: lang)
         }
     }
 
@@ -72,10 +72,7 @@ public enum SummaryModel: String, CaseIterable, Sendable {
 
     public var model: String { self == .light ? "qwen3:4b" : "qwen3:8b" }
 
-    public var title: String {
-        switch self {
-        case .light: return "Light — qwen3:4b (~3.6 GB RAM)"
-        case .better: return "Better — qwen3:8b (~6.3 GB RAM)"
-        }
+    public func title(_ lang: UILanguage = L10n.language) -> String {
+        tr(self == .light ? .modelLight : .modelBetter, lang: lang)
     }
 }

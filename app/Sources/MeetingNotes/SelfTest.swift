@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import MeetingNotesCore
+import MeetingNotesUI
 
 /// Headless recording check:
 /// `MeetingNotes --self-test-record <seconds> <folder> [--pause-at S --pause-for D]`.

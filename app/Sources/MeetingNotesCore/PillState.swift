@@ -1,7 +1,21 @@
 import Foundation
 
-public enum PermissionKind: String, Equatable, Sendable {
+public enum PermissionKind: String, CaseIterable, Equatable, Sendable {
     case microphone, screenCapture, notifications
+}
+
+/// Authorization state of one permission, as shown in the UI.
+public enum PermissionStatus: Equatable, Sendable {
+    case granted, denied, notDetermined, unavailable
+
+    public func label(_ lang: UILanguage = L10n.language) -> String {
+        switch self {
+        case .granted: return tr(.permAllowed, lang: lang)
+        case .denied: return tr(.permDenied, lang: lang)
+        case .notDetermined: return tr(.permNotDetermined, lang: lang)
+        case .unavailable: return tr(.permUnavailable, lang: lang)
+        }
+    }
 }
 
 /// The result shown in the "Done" state.
@@ -66,18 +80,18 @@ public enum PillState: Equatable, Sendable {
         return .idle(attention: permissionsNeedAttention)
     }
 
-    /// Big label of the expanded pill.
-    public var label: String {
+    /// State label of the pill and the main window header.
+    public func label(_ lang: UILanguage = L10n.language) -> String {
         switch self {
-        case .idle(let attention): return attention ? "Permissions needed" : "Ready"
-        case .starting: return "Starting…"
-        case .recording: return "Recording"
-        case .paused: return "Paused"
-        case .stopping: return "Saving…"
+        case .idle(let attention): return tr(attention ? .statePermissionsNeeded : .stateReady, lang: lang)
+        case .starting: return tr(.stateStarting, lang: lang)
+        case .recording: return tr(.stateRecording, lang: lang)
+        case .paused: return tr(.statePaused, lang: lang)
+        case .stopping: return tr(.stateSaving, lang: lang)
         case .processing(let snapshot):
-            return snapshot.waiting != nil ? "Waiting to process" : "Processing \(snapshot.percent)%"
-        case .ready(let info): return info.hasNotes ? "Done" : "Recording saved"
-        case .error: return "Error"
+            return snapshot.waiting != nil ? tr(.stateWaiting, lang: lang) : tr(.stateProcessingPercent, lang: lang, snapshot.percent)
+        case .ready(let info): return tr(info.hasNotes ? .stateDone : .stateRecordingSaved, lang: lang)
+        case .error: return tr(.stateError, lang: lang)
         }
     }
 

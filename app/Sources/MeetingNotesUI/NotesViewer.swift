@@ -5,9 +5,9 @@ import SwiftUI
 /// Loads a meeting folder's transcript.json + .work/summary.json (or notes.md as fallback) and reloads
 /// when files change (directory vnode watch, no polling).
 @MainActor
-final class NotesViewerModel: ObservableObject {
-    @Published private(set) var folder: URL
-    @Published private(set) var title = ""
+public final class NotesViewerModel: ObservableObject {
+    @Published public private(set) var folder: URL
+    @Published public private(set) var title = ""
     @Published private(set) var startedAt: Date?
     @Published private(set) var transcript: Transcript?
     @Published private(set) var summary: MeetingSummary?
@@ -19,33 +19,33 @@ final class NotesViewerModel: ObservableObject {
     private var reloadWork: DispatchWorkItem?
     private var loadGeneration = 0
 
-    init(folder: URL) {
+    public init(folder: URL) {
         self.folder = folder
         title = folder.lastPathComponent
         load()
         watch()
     }
 
-    func setFolder(_ folder: URL) {
+    public func setFolder(_ folder: URL) {
         guard MeetingFolders.key(folder) != MeetingFolders.key(self.folder) else { return }
         self.folder = folder
         watch()
         load()
     }
 
-    func stop() {
+    public func stop() {
         watchers.forEach { $0.cancel() }
         watchers = []
     }
 
-    func scheduleReload() {
+    public func scheduleReload() {
         reloadWork?.cancel()
         let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.load() } }
         reloadWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 
-    func load() {
+    public func load() {
         loadGeneration += 1
         let generation = loadGeneration
         let folder = self.folder
@@ -109,13 +109,22 @@ final class NotesViewerModel: ObservableObject {
     }
 }
 
-struct NotesView: View {
+public struct NotesView: View {
     @ObservedObject var model: NotesViewerModel
-    let controller: AppController
+    let commands: any AppCommands
+
+    public init(model: NotesViewerModel, commands: any AppCommands) {
+        self.model = model
+        self.commands = commands
+    }
 
     private static let speakerColors: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .brown, .indigo]
 
-    var body: some View {
+    public var body: some View {
+        Localized { content }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
             header.padding(16)
             Divider()
@@ -124,14 +133,14 @@ struct NotesView: View {
                     if let summary = model.summary {
                         summarySections(summary)
                     } else if model.summaryPending {
-                        Label("Summary in progress…", systemImage: "hourglass").foregroundStyle(.secondary)
+                        Label(tr(.summaryInProgress), systemImage: "hourglass").foregroundStyle(.secondary)
                     }
                     if let transcript = model.transcript {
                         transcriptSection(transcript)
                     } else if let markdown = model.markdown {
                         Text(markdown).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                     } else if model.summary == nil {
-                        Text("No notes yet.").foregroundStyle(.secondary)
+                        Text(tr(.noNotes)).foregroundStyle(.secondary)
                     }
                 }
                 .padding(16)
@@ -146,7 +155,7 @@ struct NotesView: View {
             Text(model.title).font(.title2.weight(.semibold)).textSelection(.enabled)
             HStack(spacing: 10) {
                 if let date = model.startedAt {
-                    Text(date.formatted(date: .abbreviated, time: .shortened))
+                    Text(date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(L10n.language.locale)))
                 }
                 if let duration = model.transcript?.durationSec {
                     Text("· \(Format.duration(duration))")
@@ -163,35 +172,35 @@ struct NotesView: View {
             .font(.callout)
             .foregroundStyle(.secondary)
             HStack(spacing: 8) {
-                TextField("Search transcript", text: $model.search).textFieldStyle(.roundedBorder).frame(maxWidth: 240)
+                TextField(tr(.searchTranscript), text: $model.search).textFieldStyle(.roundedBorder).frame(maxWidth: 240)
                 Spacer()
-                Button("Copy summary") { controller.copySummary(folder: model.folder) }
-                Button("Open in default app") { controller.openInDefaultApp(model.folder.appendingPathComponent("notes.md")) }
-                Button("Show in Finder") { controller.reveal(model.folder) }
+                Button(tr(.actionCopySummary)) { commands.copySummary(folder: model.folder) }
+                Button(tr(.actionOpenInDefaultApp)) { commands.openInDefaultApp(model.folder.appendingPathComponent("notes.md")) }
+                Button(tr(.actionShowInFinder)) { commands.reveal(model.folder) }
             }
             .controlSize(.small)
         }
     }
 
     @ViewBuilder private func summarySections(_ summary: MeetingSummary) -> some View {
-        if !summary.summary.isEmpty { bulletSection("Summary", summary.summary) }
-        if !summary.decisions.isEmpty { bulletSection("Key decisions", summary.decisions) }
+        if !summary.summary.isEmpty { bulletSection(tr(.summaryHeading), summary.summary) }
+        if !summary.decisions.isEmpty { bulletSection(tr(.decisionsHeading), summary.decisions) }
         if !summary.actionItems.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Action items").font(.headline)
+                Text(tr(.actionItemsHeading)).font(.headline)
                 ForEach(Array(summary.actionItems.enumerated()), id: \.offset) { _, item in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Image(systemName: "square").foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.task).textSelection(.enabled)
-                            let meta = [item.owner, item.due.map { "due \($0)" }].compactMap { $0 }.filter { !$0.isEmpty }
+                            let meta = [item.owner, item.due.map { tr(.dueDate, $0) }].compactMap { $0 }.filter { !$0.isEmpty }
                             if !meta.isEmpty { Text(meta.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary) }
                         }
                     }
                 }
             }
         }
-        if !summary.openQuestions.isEmpty { bulletSection("Open questions", summary.openQuestions) }
+        if !summary.openQuestions.isEmpty { bulletSection(tr(.openQuestionsHeading), summary.openQuestions) }
     }
 
     private func bulletSection(_ title: String, _ items: [String]) -> some View {
@@ -208,10 +217,10 @@ struct NotesView: View {
 
     @ViewBuilder private func transcriptSection(_ transcript: Transcript) -> some View {
         Divider()
-        Text("Transcript").font(.headline)
+        Text(tr(.transcriptHeading)).font(.headline)
         let blocks = transcript.blocks(filter: model.search)
         if blocks.isEmpty {
-            Text(model.search.isEmpty ? "No speech was transcribed." : "No matches.").foregroundStyle(.secondary)
+            Text(model.search.isEmpty ? tr(.noSpeech) : tr(.noMatches)).foregroundStyle(.secondary)
         }
         ForEach(blocks) { block in
             switch block {
@@ -226,7 +235,7 @@ struct NotesView: View {
             case let .pause(_, at, duration):
                 HStack {
                     Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 1)
-                    Text("Paused \(Format.duration(duration)) at \(Format.timestamp(at))").font(.caption).foregroundStyle(.secondary)
+                    Text(tr(.pausedAt, Format.duration(duration), Format.timestamp(at))).font(.caption).foregroundStyle(.secondary)
                     Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 1)
                 }
             }

@@ -1,5 +1,6 @@
 import Foundation
 import MeetingNotesCore
+import MeetingNotesUI
 
 /// Processing jobs, one at a time, through `WorkerClient`. Never starts a job while recording.
 @MainActor
@@ -130,10 +131,10 @@ final class JobQueue {
         let mode = Settings.createNotesMode
         if !next.explicit, !mode.canStart(onACPower: PowerState.onACPower, idleSeconds: PowerState.idleSeconds) {
             if mode == .whenIdle {
-                waitingReason = "Waiting until idle and plugged in"
+                waitingReason = tr(.waitIdlePlugged)
                 startGateTimer()
             } else {
-                waitingReason = "Notes are created manually"
+                waitingReason = tr(.waitManual)
                 stopGateTimer()  // nothing changes by itself; "Create notes now" starts it
             }
             publishNow()
@@ -204,7 +205,7 @@ final class JobQueue {
             queued.insert(again, at: 0)
             pump()
         } else {
-            finish(.failed(message: lastError ?? "The processing worker stopped unexpectedly; the audio is kept."))
+            finish(.failed(message: lastError ?? tr(.errWorkerStopped)))
         }
     }
 

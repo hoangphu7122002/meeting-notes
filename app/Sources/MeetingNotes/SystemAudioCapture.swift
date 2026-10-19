@@ -1,5 +1,6 @@
 import AVFoundation
 import MeetingNotesCore
+import MeetingNotesUI
 import ScreenCaptureKit
 
 /// Captures system audio output (all apps except this one) with ScreenCaptureKit into a sink.
@@ -30,7 +31,7 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         let mainID = CGMainDisplayID()
         guard let display = content.displays.first(where: { $0.displayID == mainID }) ?? content.displays.first else {
-            throw AppError("No display available for system audio capture")
+            throw AppError(tr(.errNoDisplay))
         }
 
         let config = SCStreamConfiguration()
@@ -76,7 +77,7 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
-        let message = "System audio capture stopped: \(error.localizedDescription)"
+        let message = tr(.warnSystemStopped, error.localizedDescription)
         DispatchQueue.main.async {
             guard self.stream === stream else { return }
             self.onWarning?(message)

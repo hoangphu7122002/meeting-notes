@@ -1,5 +1,6 @@
 import AppKit
 import MeetingNotesCore
+import MeetingNotesUI
 
 /// Menu item with a closure action.
 final class ActionMenuItem: NSMenuItem {
@@ -29,36 +30,34 @@ private func disabledItem(_ title: String) -> NSMenuItem {
 enum MenuFactory {
     static func statusLine(_ c: AppController) -> String {
         switch c.pill {
-        case .idle(let attention): return attention ? "Permissions need attention" : "Ready"
-        case .starting: return "Starting…"
-        case .recording: return "Recording \(c.clock.elapsed)"
-        case .paused: return "Paused \(c.clock.elapsed)"
-        case .stopping: return "Saving…"
+        case .idle, .starting, .stopping: return c.pill.label()
+        case .recording: return tr(.statusRecordingTime, c.clock.elapsed)
+        case .paused: return tr(.statusPausedTime, c.clock.elapsed)
         case .processing(let s):
             if let waiting = s.waiting { return waiting }
-            return "Writing notes \(s.percent)%" + (Format.eta(s.etaSec).map { " · \($0)" } ?? "")
-        case .ready(let info): return info.hasNotes ? "Notes ready: \(Format.clip(info.title, 40))" : "Recording saved"
+            return c.pill.label() + (Format.eta(s.etaSec).map { " · \($0)" } ?? "")
+        case .ready(let info): return info.hasNotes ? tr(.statusNotesReady, Format.clip(info.title, 40)) : c.pill.label()
         case .error(let error): return Format.clip(error.message, 60)
         }
     }
 
     static func recordingItems(_ c: AppController, hub: UIHub, source: ActionSource) -> [NSMenuItem] {
         let m = c.machine
-        let start = ActionMenuItem("Start recording", enabled: m.isEnabled(.start)) { c.startRecording(source: source) }
+        let start = ActionMenuItem(tr(.actionStartRecording), enabled: m.isEnabled(.start)) { c.startRecording(source: source) }
         start.setHotKey(c.hotkey)
         let pause: ActionMenuItem
         if m.phase == .paused {
-            pause = ActionMenuItem("Resume") { c.perform(.resume, source: source) }
+            pause = ActionMenuItem(tr(.actionResume)) { c.perform(.resume, source: source) }
         } else {
-            pause = ActionMenuItem("Pause", enabled: m.isEnabled(.pause)) { c.perform(.pause, source: source) }
+            pause = ActionMenuItem(tr(.actionPause), enabled: m.isEnabled(.pause)) { c.perform(.pause, source: source) }
         }
         pause.setHotKey(c.pauseHotkey)
-        let stop = ActionMenuItem(Settings.createNotesMode == .manual ? "Stop" : "Stop & create notes", enabled: m.isEnabled(.stop)) {
+        let stop = ActionMenuItem(c.state.stopLabel, enabled: m.isEnabled(.stop)) {
             c.perform(.stop, source: source)
         }
-        let discard = ActionMenuItem("Discard…", enabled: m.isEnabled(.discard)) {
-            hub.showControls(expand: true)
-            c.perform(.requestDiscard, source: .pill)
+        let discard = ActionMenuItem(tr(.actionDiscardEllipsis), enabled: m.isEnabled(.discard)) {
+            hub.showMainWindow()
+            c.perform(.requestDiscard, source: .window)
         }
         return [start, pause, stop, discard]
     }
@@ -67,21 +66,21 @@ enum MenuFactory {
         menu.removeAllItems()
         menu.autoenablesItems = false
         menu.addItem(disabledItem(statusLine(c)))
+        menu.addItem(ActionMenuItem(tr(.actionOpenMain)) { hub.showMainWindow() })
         menu.addItem(.separator())
         recordingItems(c, hub: hub, source: .menu).forEach(menu.addItem)
-        menu.addItem(ActionMenuItem("Show controls") { hub.showControls(expand: true) })
+        menu.addItem(ActionMenuItem(tr(.actionShowControls)) { hub.showControls(expand: true) })
         menu.addItem(.separator())
         menu.addItem(recentsMenuItem(c, hub: hub))
-        menu.addItem(ActionMenuItem("Open last notes") { c.openLastNotes() })
-        menu.addItem(ActionMenuItem("Open notes folder") { c.openNotesFolder() })
+        menu.addItem(ActionMenuItem(tr(.actionOpenLastNotes)) { c.openLastNotes() })
+        menu.addItem(ActionMenuItem(tr(.actionOpenNotesFolder)) { c.openNotesFolder() })
         menu.addItem(.separator())
-        let settings = ActionMenuItem("Settings…") { hub.showSettings() }
+        let settings = ActionMenuItem(tr(.actionSettingsEllipsis)) { hub.showSettings() }
         settings.keyEquivalent = ","
         menu.addItem(settings)
-        menu.addItem(ActionMenuItem("Permissions…") { hub.showOnboarding() })
-        menu.addItem(ActionMenuItem("Reset pill position") { hub.resetPillPosition() })
+        menu.addItem(ActionMenuItem(tr(.actionResetPillPosition)) { hub.resetPillPosition() })
         menu.addItem(.separator())
-        let quit = ActionMenuItem("Quit Meeting Notes") { NSApp.terminate(nil) }
+        let quit = ActionMenuItem(tr(.menuQuit)) { NSApp.terminate(nil) }
         quit.keyEquivalent = "q"
         menu.addItem(quit)
     }
@@ -90,43 +89,43 @@ enum MenuFactory {
         let menu = NSMenu()
         menu.autoenablesItems = false
         menu.addItem(disabledItem(statusLine(c)))
+        menu.addItem(ActionMenuItem(tr(.actionOpenMain)) { hub.showMainWindow() })
         let items = recordingItems(c, hub: hub, source: .dock)
         items.prefix(3).forEach { item in
             item.keyEquivalent = ""
             menu.addItem(item)
         }
-        menu.addItem(ActionMenuItem("Show controls") { hub.showControls(expand: true) })
-        menu.addItem(ActionMenuItem("Open last notes") { c.openLastNotes() })
+        menu.addItem(ActionMenuItem(tr(.actionShowControls)) { hub.showControls(expand: true) })
+        menu.addItem(ActionMenuItem(tr(.actionOpenLastNotes)) { c.openLastNotes() })
         return menu
     }
 
     static func recentsMenuItem(_ c: AppController, hub: UIHub) -> NSMenuItem {
-        let parent = NSMenuItem(title: "Recent meetings", action: nil, keyEquivalent: "")
+        let parent = NSMenuItem(title: tr(.menuRecentMeetings), action: nil, keyEquivalent: "")
         let submenu = NSMenu()
         submenu.autoenablesItems = false
         let recents = c.recents()
-        if recents.isEmpty { submenu.addItem(disabledItem("No meetings yet")) }
+        if recents.isEmpty { submenu.addItem(disabledItem(tr(.menuNoMeetings))) }
         let percent = c.processingSnapshot.flatMap { $0.waiting == nil ? $0.percent : nil }
         for meeting in recents {
-            var status = meeting.status.label
-            if meeting.status == .processing, let percent { status = "processing \(percent)%" }
+            let status = meeting.status.label(percent: meeting.status == .processing ? percent : nil)
             let item = NSMenuItem(title: "\(Format.clip(meeting.title, 44)) — \(status)", action: nil, keyEquivalent: "")
             let actions = NSMenu()
             actions.autoenablesItems = false
-            actions.addItem(ActionMenuItem("Open notes", enabled: meeting.hasNotes) { hub.openNotes(meeting.url) })
-            actions.addItem(ActionMenuItem("Show in Finder") { c.reveal(meeting.url) })
+            actions.addItem(ActionMenuItem(tr(.actionOpenNotes), enabled: meeting.hasNotes) { hub.openNotes(meeting.url) })
+            actions.addItem(ActionMenuItem(tr(.actionShowInFinder)) { c.reveal(meeting.url) })
             switch meeting.status {
             case .failed(let error):
-                actions.addItem(ActionMenuItem("Retry") { c.retry(folder: meeting.url) })
+                actions.addItem(ActionMenuItem(tr(.actionRetry)) { c.retry(folder: meeting.url) })
                 if let error { actions.addItem(disabledItem(Format.clip(error, 70))) }
             case .notProcessed, .cancelled:
-                actions.addItem(ActionMenuItem("Create notes") { c.createNotes(folder: meeting.url) })
+                actions.addItem(ActionMenuItem(tr(.actionCreateNotes)) { c.createNotes(folder: meeting.url) })
             case .done:
-                actions.addItem(ActionMenuItem("Reprocess") { c.retry(folder: meeting.url) })
+                actions.addItem(ActionMenuItem(tr(.actionReprocess)) { c.retry(folder: meeting.url) })
             default:
                 break
             }
-            if meeting.hasLog { actions.addItem(ActionMenuItem("Show pipeline log") { c.openInDefaultApp(meeting.logURL) }) }
+            if meeting.hasLog { actions.addItem(ActionMenuItem(tr(.actionShowLog)) { c.openInDefaultApp(meeting.logURL) }) }
             item.submenu = actions
             submenu.addItem(item)
         }
@@ -140,41 +139,43 @@ enum MenuFactory {
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "About Meeting Notes", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: tr(.menuAbout), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        let settings = ActionMenuItem("Settings…") { hubProvider()?.showSettings() }
+        let settings = ActionMenuItem(tr(.actionSettingsEllipsis)) { hubProvider()?.showSettings() }
         settings.keyEquivalent = ","
         appMenu.addItem(settings)
-        appMenu.addItem(ActionMenuItem("Permissions…") { hubProvider()?.showOnboarding() })
+        let open = ActionMenuItem(tr(.actionOpenMain)) { hubProvider()?.showMainWindow() }
+        open.keyEquivalent = "0"
+        appMenu.addItem(open)
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide Meeting Notes", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: tr(.menuHide), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit Meeting Notes", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: tr(.menuQuit), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         main.addItem(appItem)
 
         let editItem = NSMenuItem()
-        let edit = NSMenu(title: "Edit")
-        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        let edit = NSMenu(title: tr(.menuEdit))
+        edit.addItem(withTitle: tr(.menuUndo), action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: tr(.menuRedo), action: Selector(("redo:")), keyEquivalent: "Z")
         edit.addItem(.separator())
-        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        edit.addItem(withTitle: tr(.menuCut), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: tr(.menuCopy), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: tr(.menuPaste), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: tr(.menuSelectAll), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = edit
         main.addItem(editItem)
 
         let recordingItem = NSMenuItem()
-        let recording = NSMenu(title: "Recording")
+        let recording = NSMenu(title: tr(.menuRecording))
         recording.delegate = recordingDelegate
         recordingItem.submenu = recording
         main.addItem(recordingItem)
 
         let windowItem = NSMenuItem()
-        let window = NSMenu(title: "Window")
-        window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        window.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let window = NSMenu(title: tr(.menuWindow))
+        window.addItem(withTitle: tr(.menuMinimize), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        window.addItem(withTitle: tr(.menuClose), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         windowItem.submenu = window
         main.addItem(windowItem)
         NSApp.windowsMenu = window
@@ -200,7 +201,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         item.button?.toolTip = "Meeting Notes"
     }
 
-    func update() {
+    func update(force: Bool = false) {
+        item.button?.toolTip = "Meeting Notes – \(controller.pill.label())"
+        item.button?.setAccessibilityLabel(item.button?.toolTip)
         let key: String
         switch controller.pill {
         case .idle(let attention): key = attention ? "attention" : "idle"
@@ -211,7 +214,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         case .ready: key = "ready"
         case .error: key = "error"
         }
-        guard key != iconKey else { return }
+        guard force || key != iconKey else { return }
         iconKey = key
         item.button?.image = Self.icon(key)
     }
@@ -268,8 +271,9 @@ final class RecordingMenuDelegate: NSObject, NSMenuDelegate {
             menu.addItem(item)
         }
         menu.addItem(.separator())
-        menu.addItem(ActionMenuItem("Show controls") { hub.showControls(expand: true) })
+        menu.addItem(ActionMenuItem(tr(.actionOpenMain)) { hub.showMainWindow() })
+        menu.addItem(ActionMenuItem(tr(.actionShowControls)) { hub.showControls(expand: true) })
         menu.addItem(MenuFactory.recentsMenuItem(controller, hub: hub))
-        menu.addItem(ActionMenuItem("Open last notes") { [controller] in controller.openLastNotes() })
+        menu.addItem(ActionMenuItem(tr(.actionOpenLastNotes)) { [controller] in controller.openLastNotes() })
     }
 }

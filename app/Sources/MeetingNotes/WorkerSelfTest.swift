@@ -1,6 +1,7 @@
 #if DEBUG
 import AppKit
 import MeetingNotesCore
+import MeetingNotesUI
 
 /// `MeetingNotes --self-test-worker <folder>... -uvPath <fake worker> -pipelineDir <dir>` (debug builds):
 /// runs `JobQueue` + `WorkerClient` against a protocol-compatible fake worker. Folder names select the

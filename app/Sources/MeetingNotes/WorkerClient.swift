@@ -1,5 +1,6 @@
 import Foundation
 import MeetingNotesCore
+import MeetingNotesUI
 
 /// The long-lived `meeting-notes worker` process, spawned on demand.
 ///
@@ -32,7 +33,7 @@ final class WorkerClient {
     }
 
     func send(_ line: String) throws {
-        guard let stdin, isAvailable else { throw AppError("The processing worker is not running") }
+        guard let stdin, isAvailable else { throw AppError(tr(.errWorkerNotRunning)) }
         try stdin.write(contentsOf: Data(line.utf8))
     }
 
@@ -66,9 +67,9 @@ final class WorkerClient {
     private func spawn(priority: String, model: String) throws {
         let fm = FileManager.default
         let uv = Settings.uvPath
-        guard fm.isExecutableFile(atPath: uv) else { throw AppError("uv not found at \(uv)") }
-        guard let pipelineDir = Settings.pipelineDir else { throw AppError("Pipeline folder not configured (Info.plist MNPipelineDir).") }
-        guard fm.fileExists(atPath: pipelineDir) else { throw AppError("Pipeline folder not found: \(pipelineDir)") }
+        guard fm.isExecutableFile(atPath: uv) else { throw AppError(tr(.errUvNotFound, uv)) }
+        guard let pipelineDir = Settings.pipelineDir else { throw AppError(tr(.errPipelineNotConfigured)) }
+        guard fm.fileExists(atPath: pipelineDir) else { throw AppError(tr(.errPipelineNotFound, pipelineDir)) }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: uv)

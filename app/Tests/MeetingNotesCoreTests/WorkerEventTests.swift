@@ -53,7 +53,7 @@ struct WorkerEventTests {
         #expect(snapshot.currentStage == "transcribe")
         #expect(snapshot.percent == 49)
         #expect(snapshot.etaSec == 61)
-        #expect(Format.eta(snapshot.etaSec) == "about 1 min left")
+        #expect(Format.eta(snapshot.etaSec, .en) == "about 1 min left")
         #expect(snapshot.stages.first { $0.name == "transcribe" }?.status == .running)
         #expect(snapshot.stages.first { $0.name == "transcribe" }?.fraction == 0.5)
         #expect(snapshot.partialNotes == nil)
@@ -108,7 +108,7 @@ struct NotesDocumentTests {
     @Test func summaryPlainText() throws {
         let json = #"{"title": "Plan", "summary": ["A"], "decisions": [], "action_items": [{"task": "Ship", "owner": "Me", "due": "Friday"}], "open_questions": ["Why?"]}"#
         let summary = try JSONDecoder().decode(MeetingSummary.self, from: Data(json.utf8))
-        #expect(summary.plainText.contains("- [ ] Ship (Me, due Friday)"))
-        #expect(summary.plainText.contains("Open questions\n- Why?"))
+        #expect(summary.plainText(.en).contains("- [ ] Ship (Me, due Friday)"))
+        #expect(summary.plainText(.en).contains("Open questions\n- Why?"))
     }
 }

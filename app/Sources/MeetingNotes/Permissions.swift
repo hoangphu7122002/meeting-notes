@@ -3,21 +3,10 @@ import AVFoundation
 import CoreGraphics
 import IOKit.ps
 import MeetingNotesCore
+import MeetingNotesUI
 
 enum Permissions {
-    enum Status: Equatable {
-        case granted, denied, notDetermined
-
-        var text: String {
-            switch self {
-            case .granted: return "Allowed"
-            case .denied: return "Not allowed"
-            case .notDetermined: return "Not asked yet"
-            }
-        }
-    }
-
-    static var microphone: Status {
+    static var microphone: PermissionStatus {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized: return .granted
         case .notDetermined: return .notDetermined

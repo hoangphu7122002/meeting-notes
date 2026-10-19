@@ -1,37 +1,53 @@
 import Foundation
 
-struct RecentMeeting: Identifiable {
-    enum Status: Equatable {
+/// One meeting folder in the "Recent meetings" list.
+public struct RecentMeeting: Identifiable, Equatable, Sendable {
+    public enum Status: Equatable, Sendable {
         case done, processing, queued, recording, failed(String?), cancelled, notProcessed
 
-        var label: String {
+        /// `percent` is shown for the running job.
+        public func label(percent: Int? = nil, _ lang: UILanguage = L10n.language) -> String {
             switch self {
-            case .done: return "ready"
-            case .processing: return "processing"
-            case .queued: return "queued"
-            case .recording: return "recording"
-            case .failed: return "failed"
-            case .cancelled: return "cancelled"
-            case .notProcessed: return "not processed"
+            case .done: return tr(.meetingReady, lang: lang)
+            case .processing:
+                return percent.map { tr(.meetingProcessingPercent, lang: lang, $0) } ?? tr(.meetingProcessing, lang: lang)
+            case .queued: return tr(.meetingQueued, lang: lang)
+            case .recording: return tr(.meetingRecording, lang: lang)
+            case .failed: return tr(.meetingFailed, lang: lang)
+            case .cancelled: return tr(.meetingCancelled, lang: lang)
+            case .notProcessed: return tr(.meetingNotProcessed, lang: lang)
             }
         }
     }
 
-    let url: URL
-    let title: String
-    let date: Date
-    let status: Status
-    var id: String { url.path }
-    var notesURL: URL { url.appendingPathComponent("notes.md") }
-    var logURL: URL { url.appendingPathComponent("pipeline.app.log") }
-    var hasNotes: Bool { FileManager.default.fileExists(atPath: notesURL.path) }
-    var hasLog: Bool { FileManager.default.fileExists(atPath: logURL.path) }
-    var isBusy: Bool { status == .processing || status == .queued || status == .recording }
+    public let url: URL
+    public let title: String
+    public let date: Date
+    public let status: Status
+    /// Recorded seconds from meeting.json (nil while recording or unknown).
+    public let durationSec: Double?
+    /// notes.md exists (read when the list is loaded).
+    public let hasNotes: Bool
+
+    public init(url: URL, title: String, date: Date, status: Status, durationSec: Double? = nil, hasNotes: Bool = false) {
+        self.url = url
+        self.title = title
+        self.date = date
+        self.status = status
+        self.durationSec = durationSec
+        self.hasNotes = hasNotes
+    }
+
+    public var id: String { url.path }
+    public var notesURL: URL { url.appendingPathComponent("notes.md") }
+    public var logURL: URL { url.appendingPathComponent("pipeline.app.log") }
+    public var hasLog: Bool { FileManager.default.fileExists(atPath: logURL.path) }
+    public var isBusy: Bool { status == .processing || status == .queued || status == .recording }
 }
 
-enum MeetingFolders {
+public enum MeetingFolders {
     /// Creates `<dir>/<yyyy-MM-dd HHmm> Meeting[ N]/`.
-    static func create(in dir: URL, date: Date = Date()) throws -> URL {
+    public static func create(in dir: URL, date: Date = Date()) throws -> URL {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HHmm"
@@ -48,35 +64,44 @@ enum MeetingFolders {
         return url
     }
 
-    static func removeIfEmpty(_ url: URL) {
+    public static func removeIfEmpty(_ url: URL) {
         let contents = (try? FileManager.default.contentsOfDirectory(atPath: url.path)) ?? ["?"]
         if contents.filter({ $0 != ".DS_Store" }).isEmpty { try? FileManager.default.removeItem(at: url) }
     }
 
-    static func key(_ url: URL) -> String { url.standardizedFileURL.path }
+    public static func key(_ url: URL) -> String { url.standardizedFileURL.path }
 
-    static func title(of folder: URL) -> String {
+    public static func title(of folder: URL) -> String {
         (readJSON(folder.appendingPathComponent("meeting.json"))?["title"] as? String) ?? folder.lastPathComponent
     }
 
-    static func readJSON(_ url: URL) -> [String: Any]? {
+    public static func readJSON(_ url: URL) -> [String: Any]? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 }
 
-enum Recents {
-    struct Context {
-        var recording: URL?
-        var processing: URL?
-        var processingPercent: Int?
-        var jobActive = false
-        var queued: [URL] = []
+public enum Recents {
+    public struct Context: Sendable {
+        public var recording: URL?
+        public var processing: URL?
+        public var processingPercent: Int?
+        public var jobActive = false
+        public var queued: [URL] = []
+
+        public init(recording: URL? = nil, processing: URL? = nil, processingPercent: Int? = nil, jobActive: Bool = false,
+                    queued: [URL] = []) {
+            self.recording = recording
+            self.processing = processing
+            self.processingPercent = processingPercent
+            self.jobActive = jobActive
+            self.queued = queued
+        }
     }
 
     /// Meeting folders (containing meeting.json or notes.md), newest first by creation date.
     /// Read on demand (menu open), never on a timer.
-    static func load(dir: URL, limit: Int = 8, context: Context) -> [RecentMeeting] {
+    public static func load(dir: URL, limit: Int = 10, context: Context) -> [RecentMeeting] {
         let fm = FileManager.default
         let keys: [URLResourceKey] = [.isDirectoryKey, .creationDateKey]
         guard let entries = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else { return [] }
@@ -90,7 +115,9 @@ enum Recents {
         let queued = Set(context.queued.map(MeetingFolders.key))
 
         return folders.sorted { $0.1 > $1.1 }.prefix(limit).map { url, date in
-            let title = MeetingFolders.title(of: url)
+            let meeting = MeetingFolders.readJSON(url.appendingPathComponent("meeting.json"))
+            let title = (meeting?["title"] as? String) ?? url.lastPathComponent
+            let hasNotes = fm.fileExists(atPath: url.appendingPathComponent("notes.md").path)
             let key = MeetingFolders.key(url)
             let status: RecentMeeting.Status
             if let recording = context.recording, MeetingFolders.key(recording) == key {
@@ -102,7 +129,7 @@ enum Recents {
             } else {
                 let pipeline = MeetingFolders.readJSON(url.appendingPathComponent("status.json"))
                 switch pipeline?["state"] as? String {
-                case "done" where fm.fileExists(atPath: url.appendingPathComponent("notes.md").path):
+                case "done" where hasNotes:
                     status = .done
                 case "failed":
                     status = .failed(pipeline?["error"] as? String)
@@ -115,7 +142,8 @@ enum Recents {
                     status = .notProcessed
                 }
             }
-            return RecentMeeting(url: url, title: title, date: date, status: status)
+            let duration = (meeting?["duration_sec"] as? NSNumber)?.doubleValue
+            return RecentMeeting(url: url, title: title, date: date, status: status, durationSec: duration, hasNotes: hasNotes)
         }
     }
 }

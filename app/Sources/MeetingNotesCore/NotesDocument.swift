@@ -135,22 +135,22 @@ public struct MeetingSummary: Decodable, Equatable, Sendable {
     }
 
     /// Plain-text summary for the clipboard.
-    public var plainText: String {
+    public func plainText(_ lang: UILanguage = L10n.language) -> String {
         var parts: [String] = []
         if let title, !title.isEmpty { parts.append(title) }
-        if !summary.isEmpty { parts.append("Summary\n" + summary.map { "- \($0)" }.joined(separator: "\n")) }
-        if !decisions.isEmpty { parts.append("Key decisions\n" + decisions.map { "- \($0)" }.joined(separator: "\n")) }
+        if !summary.isEmpty { parts.append(tr(.summaryHeading, lang: lang) + "\n" + summary.map { "- \($0)" }.joined(separator: "\n")) }
+        if !decisions.isEmpty { parts.append(tr(.decisionsHeading, lang: lang) + "\n" + decisions.map { "- \($0)" }.joined(separator: "\n")) }
         if !actionItems.isEmpty {
-            parts.append("Action items\n" + actionItems.map { item in
+            parts.append(tr(.actionItemsHeading, lang: lang) + "\n" + actionItems.map { item in
                 var line = "- [ ] \(item.task)"
                 var meta: [String] = []
                 if let owner = item.owner, !owner.isEmpty { meta.append(owner) }
-                if let due = item.due, !due.isEmpty { meta.append("due \(due)") }
+                if let due = item.due, !due.isEmpty { meta.append(tr(.dueDate, lang: lang, due)) }
                 if !meta.isEmpty { line += " (\(meta.joined(separator: ", ")))" }
                 return line
             }.joined(separator: "\n"))
         }
-        if !openQuestions.isEmpty { parts.append("Open questions\n" + openQuestions.map { "- \($0)" }.joined(separator: "\n")) }
+        if !openQuestions.isEmpty { parts.append(tr(.openQuestionsHeading, lang: lang) + "\n" + openQuestions.map { "- \($0)" }.joined(separator: "\n")) }
         return parts.joined(separator: "\n\n")
     }
 }

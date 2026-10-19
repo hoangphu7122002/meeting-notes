@@ -1,8 +1,8 @@
 # Meeting Notes
 
-A free meeting-notes app for macOS that runs entirely on your Mac. A small pill at the bottom of the screen shows what it is doing: hover it and click **Start** (or press **⌃⌥⌘R**) when a meeting starts, and **Stop & create notes** when it ends. It records your microphone and the other participants (system audio from Zoom, Google Meet, Teams and so on). It then transcribes the audio, labels the speakers and writes a summary with action items, all locally.
+A free meeting-notes app for macOS that runs entirely on your Mac. Its main window shows what it is doing: click **Start recording** (or press **⌃⌥⌘R**) when a meeting starts, and **Stop & create notes** when it ends; while recording, a small floating control at the bottom of the screen shows the timer and levels. It records your microphone and the other participants (system audio from Zoom, Google Meet, Teams and so on). It then transcribes the audio, labels the speakers and writes a summary with action items, all locally.
 
-- **App** (`app/`, Swift/SwiftUI): records the mic and system audio as two separate tracks, using ScreenCaptureKit for system audio (no BlackHole needed). Floating pill, Dock icon and a compact menu bar icon, global hotkeys, pause/resume, meeting detection, a notes viewer and a list of recent meetings.
+- **App** (`app/`, Swift/SwiftUI): records the mic and system audio as two separate tracks, using ScreenCaptureKit for system audio (no BlackHole needed). Main window (controls, meters, processing, recent meetings, permissions), optional floating pill, Dock icon and a compact menu bar icon, Vietnamese (default) or English UI (Settings › Ngôn ngữ / Language), global hotkeys, pause/resume, meeting detection, a notes viewer and a list of recent meetings.
 - **Pipeline** (`pipeline/`, Python/uv): handles transcription (mlx-whisper large-v3-turbo on the Apple GPU), speaker diarization (pyannote, with a fallback) and the summary (Ollama `qwen3:4b` by default, `qwen3:8b` optional). The app runs it after every recording, and you can run it yourself from the CLI.
 
 Nothing is sent to a cloud service. The only network traffic is a one-time download of open model weights (Hugging Face, Ollama registry).
@@ -41,11 +41,11 @@ The method used is recorded in `transcript.json` (`diarization.methods`) and not
 
 ## First run (permissions)
 
-1. Open `~/Applications/MeetingNotes.app`. A setup window lists the permissions (with a 5 s live Me/Them test), the pill appears just above the Dock, and the app has a Dock icon. Notifications are optional ("Notes ready"). Reopen the setup window later from the menu or Dock › Permissions….
+1. Open `~/Applications/MeetingNotes.app`. The main window opens with a getting-started note and the permission checklist (Fix buttons and a 5 s live Me/Them test). Notifications are optional ("Notes ready"). The window opens again from the Dock icon, `open -a MeetingNotes`, `open meetingnotes://show` or the menus (Open MeetingNotes).
 2. Click **Start Recording**. macOS asks for:
    - **Microphone**: click Allow.
-   - **Screen & System Audio Recording**: macOS opens System Settings › Privacy & Security › Screen & System Audio Recording. Enable **MeetingNotes**, then quit and reopen the app (menu › Quit Meeting Notes). Only audio is captured; no screen content is saved.
-3. The first recording before step 2 is complete may be mic-only. The pill shows a warning ("System audio not permitted").
+   - **Screen & System Audio Recording**: macOS opens System Settings › Privacy & Security › Screen & System Audio Recording. Enable **MeetingNotes**, then reopen the app (the main window banner has **Relaunch**, enabled while nothing is recording or processing). Only audio is captured; no screen content is saved.
+3. The first recording before step 2 is complete may be mic-only. The main window shows an orange banner and the pill a warning ("Others are not being recorded").
 4. Optional: **Settings › Launch at Login**. If macOS asks for approval, enable it in System Settings › General › Login Items.
 
 Notes:
@@ -55,8 +55,9 @@ Notes:
 ## Controls (no menu bar needed)
 
 On a MacBook with a notch and a crowded menu bar, macOS hides menu bar items that don't fit behind the notch, with no warning. The app therefore never depends on its menu bar icon:
-- **Floating pill** at the bottom center, just above the Dock, on every Space including full-screen apps. Hover it to expand. Clicking the pill only expands it; only the explicit buttons start, stop or discard. Drag it to move it (menu › Reset pill position).
-- **Dock icon** (Settings › Show in Dock, default on). Right-click it for Start / Pause / Stop & create notes / Show controls / Open last notes. Opening the app again (Finder, Spotlight, `open -a MeetingNotes`) brings the pill to the front.
+- **Main window**: the home of the app (Start, Pause/Resume, Stop & create notes, Discard, title, meters, processing, recent meetings, permissions).
+- **Floating pill** at the bottom center, just above the Dock, on every Space including full-screen apps: shown while recording and processing (Settings › Show floating control while recording, default on; …when idle, default off). Hover it to expand. Clicking the pill only expands it; only the explicit buttons start, stop or discard. Drag it to move it (menu › Reset pill position).
+- **Dock icon** (Settings › Show in Dock, default on). Right-click it for Start / Pause / Stop & create notes / Show controls / Open last notes. Opening the app again (Finder, Spotlight, `open -a MeetingNotes`) brings the main window to the front.
 - **Hotkeys:** **⌃⌥⌘R** start/stop, **⌃⌥⌘P** pause/resume, each with a short on-screen toast.
 - **URL scheme / CLI:** `open meetingnotes://stop` (also start, pause, resume, toggle, show), or `uv run --project ~/meeting-notes/pipeline meeting-notes ctl stop|start|pause|resume|toggle|show|status`.
 - **Menu bar icon:** icon only, to take as little space as possible.
@@ -199,6 +200,7 @@ uv run pytest                                       # unit tests (fast, no model
 MEETING_NOTES_E2E=1 uv run pytest tests/test_e2e.py # end-to-end: synthetic Vietnamese/English meeting via `say` + real models + Ollama
 uv run python tests/e2e/make_synthetic.py /tmp/x    # just generate the synthetic meeting
 cd ../app && swift build && swift test             # app debug build + unit tests (MeetingNotesCore)
+swift run MeetingNotesPreviews ../docs/screenshots  # offscreen PNGs of the pill and main window (fake state; never starts the app)
 ~/Applications/MeetingNotes.app/Contents/MacOS/MeetingNotes --self-test-record 20 /tmp/mn-test --pause-at 6 --pause-for 5   # headless recording test
 ```
 

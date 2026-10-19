@@ -8,24 +8,24 @@ public enum Format {
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
     }
 
-    /// "about 2 min left", "less than a minute left", "about 1 h 5 min left"; nil when unknown.
-    public static func eta(_ seconds: Double?) -> String? {
+    /// "about 2 min left" / "Còn khoảng 2 phút", "less than a minute left", "about 1 h 5 min left"; nil when unknown.
+    public static func eta(_ seconds: Double?, _ lang: UILanguage = L10n.language) -> String? {
         guard let seconds, seconds.isFinite, seconds >= 0 else { return nil }
-        if seconds < 45 { return "less than a minute left" }
+        if seconds < 45 { return tr(.etaUnderMinute, lang: lang) }
         let minutes = Int((seconds / 60).rounded())
-        if minutes < 60 { return "about \(max(1, minutes)) min left" }
+        if minutes < 60 { return tr(.etaMinutes, lang: lang, max(1, minutes)) }
         let (h, m) = (minutes / 60, minutes % 60)
-        return m == 0 ? "about \(h) h left" : "about \(h) h \(m) min left"
+        return m == 0 ? tr(.etaHours, lang: lang, h) : tr(.etaHoursMinutes, lang: lang, h, m)
     }
 
-    /// Compact duration: "45 s", "12 min", "1 h 5 min".
-    public static func duration(_ seconds: Double) -> String {
+    /// Compact duration: "45 s", "12 min", "1 h 5 min" (vi: "45 giây", "12 phút", "1 giờ 5 phút").
+    public static func duration(_ seconds: Double, _ lang: UILanguage = L10n.language) -> String {
         let total = max(0, Int(seconds.rounded()))
-        if total < 60 { return "\(total) s" }
+        if total < 60 { return tr(.durSeconds, lang: lang, total) }
         let minutes = total / 60
-        if minutes < 60 { return "\(minutes) min" }
+        if minutes < 60 { return tr(.durMinutes, lang: lang, minutes) }
         let (h, m) = (minutes / 60, minutes % 60)
-        return m == 0 ? "\(h) h" : "\(h) h \(m) min"
+        return m == 0 ? tr(.durHours, lang: lang, h) : tr(.durHoursMinutes, lang: lang, h, m)
     }
 
     /// Transcript timestamp: `4:05` or `1:04:05`.

@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import MeetingNotesCore
+import MeetingNotesUI
 
 /// System-wide hotkey via Carbon `RegisterEventHotKey` (no Accessibility permission required).
 final class HotKey {

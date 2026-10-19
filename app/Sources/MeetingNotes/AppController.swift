@@ -1,35 +1,6 @@
 import AppKit
-import Combine
 import MeetingNotesCore
-
-/// Where a user action came from. Everything except the pill's own buttons gets a toast.
-enum ActionSource {
-    case pill, menu, hotkey, url, dock, detection, autoStop
-}
-
-enum SystemAudioHealth: Equatable {
-    case ok, notPermitted, silent
-}
-
-struct AutoStopPrompt: Equatable {
-    var reason: String
-    var remaining: Int
-    /// Triggered by the meeting app releasing the microphone (vs. silence).
-    var appEnded: Bool
-}
-
-/// Elapsed time, published once per second while recording.
-@MainActor
-final class ClockModel: ObservableObject {
-    @Published var elapsed = "00:00"
-}
-
-/// Me/Them meter values (0...1), published only while the pill is visible.
-@MainActor
-final class LevelModel: ObservableObject {
-    @Published var me: Double = 0
-    @Published var them: Double = 0
-}
+import MeetingNotesUI
 
 /// UI surfaces the controller drives (implemented by `UIHub`).
 @MainActor
@@ -41,34 +12,78 @@ protocol UIPresenter: AnyObject {
     func openNotes(_ folder: URL)
     func notesFolderMoved(from: URL, to: URL)
     func reloadNotes(_ folder: URL)
-    func showOnboarding()
+    func showMainWindow()
     func showSettings()
     func showControls(expand: Bool)
     func hidePill()
     func endTitleEditing()
+    func languageChanged()
+    func setShowInDock(_ show: Bool)
+    func resetPillPosition()
     var isPillExpanded: Bool { get }
     var isEditingTitle: Bool { get }
+    /// The main window is on screen (recents are only read while it is).
+    var isMainWindowVisible: Bool { get }
 }
 
 /// Central app state: recorder, processing queue, meeting detection, hotkeys, state.json.
+/// Everything the views show lives in `state`; the views call back through `AppCommands`.
 @MainActor
-final class AppController: ObservableObject {
-    @Published private(set) var pill: PillState = .idle(attention: false)
-    @Published private(set) var machine = RecorderMachine()
-    @Published var titleDraft = ""
-    @Published private(set) var systemAudio: SystemAudioHealth = .ok
-    @Published private(set) var micAvailable = true
-    @Published private(set) var recordingWarnings: [String] = []
-    @Published private(set) var detectedApp: MeetingDetector.App?
-    @Published private(set) var permissionsNeedAttention = false
-    @Published private(set) var lastResult: ReadyInfo?
-    @Published private(set) var hotkey: HotKeySpec?
-    @Published private(set) var pauseHotkey: HotKeySpec?
-    @Published private(set) var hotkeyError: String?
-    @Published private(set) var notesDir = Settings.notesDir
+final class AppController {
+    let state = AppState()
 
-    let clock = ClockModel()
-    let levels = LevelModel()
+    // Forwarders keep the controller code close to the state it owns.
+    private(set) var pill: PillState {
+        get { state.pill }
+        set { if state.pill != newValue { state.pill = newValue } }
+    }
+    private(set) var machine: RecorderMachine {
+        get { state.machine }
+        set { if state.machine != newValue { state.machine = newValue } }
+    }
+    var titleDraft: String {
+        get { state.titleDraft }
+        set { if state.titleDraft != newValue { state.titleDraft = newValue } }
+    }
+    private(set) var systemAudio: SystemAudioHealth {
+        get { state.systemAudio }
+        set { if state.systemAudio != newValue { state.systemAudio = newValue } }
+    }
+    private(set) var micAvailable: Bool {
+        get { state.micAvailable }
+        set { if state.micAvailable != newValue { state.micAvailable = newValue } }
+    }
+    private(set) var recordingWarnings: [String] {
+        get { state.recordingWarnings }
+        set { if state.recordingWarnings != newValue { state.recordingWarnings = newValue } }
+    }
+    private(set) var detectedApp: MeetingDetector.App? {
+        didSet { if state.detectedAppName != detectedApp?.name { state.detectedAppName = detectedApp?.name } }
+    }
+    private(set) var permissionsNeedAttention = false
+    private(set) var lastResult: ReadyInfo? {
+        get { state.lastResult }
+        set { if state.lastResult != newValue { state.lastResult = newValue } }
+    }
+    private(set) var hotkey: HotKeySpec? {
+        get { state.hotkey }
+        set { state.hotkey = newValue }
+    }
+    private(set) var pauseHotkey: HotKeySpec? {
+        get { state.pauseHotkey }
+        set { state.pauseHotkey = newValue }
+    }
+    private(set) var hotkeyError: String? {
+        get { state.hotkeyError }
+        set { state.hotkeyError = newValue }
+    }
+    private(set) var notesDir: URL {
+        get { state.notesDir }
+        set { state.notesDir = newValue }
+    }
+
+    var clock: ClockModel { state.clock }
+    var levels: LevelModel { state.levels }
     let jobs = JobQueue()
     let detector = MeetingDetector()
     let notifier = Notifier()
@@ -140,10 +155,19 @@ final class AppController: ObservableObject {
         writeStateFile(AppStatusSnapshot(state: "not_running"), sync: true)
     }
 
-    /// Re-reads permission state. Returns true when a previously complete setup regressed.
+    /// Re-reads permission state (app activation, main window key; never polled).
+    /// Returns true when a previously complete setup regressed.
     @discardableResult
     func refreshPermissions() -> Bool {
-        let granted = Permissions.allGranted
+        let microphone = Permissions.microphone
+        let screen: PermissionStatus = Permissions.screenCapture ? .granted : .denied
+        if state.microphone != microphone { state.microphone = microphone }
+        if state.screenCapture != screen { state.screenCapture = screen }
+        notifier.status { [weak self] status in
+            guard let self, self.state.notifications != status else { return }
+            self.state.notifications = status
+        }
+        let granted = microphone == .granted && screen == .granted
         let regressed = !granted && Settings.permissionsWereGranted
         if granted { Settings.permissionsWereGranted = true }
         if permissionsNeedAttention != !granted {
@@ -165,15 +189,16 @@ final class AppController: ObservableObject {
             ui?.endTitleEditing()  // commits the title being typed before the recording ends
         }
         let outcome = machine.handle(command)
-        var toast = outcome.toast
+        var toast = outcome.toast.map { tr($0) }
         switch outcome.effect {
         case .startCapture:
             toast = nil  // "Recording started" once capture runs
             jobs.recordingActive = true  // no new job may start while the capture starts
             beginRecording(source: source)
         case .stopCapture:
-            if Settings.createNotesMode == .manual { toast = "Stopped – recording saved" }
-            if source == .autoStop { toast = "Meeting ended – " + (Settings.createNotesMode == .manual ? "recording saved" : "creating notes…") }
+            let manual = Settings.createNotesMode == .manual
+            if manual { toast = tr(.toastStoppedSaved) }
+            if source == .autoStop { toast = tr(manual ? .toastMeetingEndedSaved : .toastMeetingEndedCreating) }
             finishRecording()
         case .pauseCapture:
             session?.pause()
@@ -188,11 +213,13 @@ final class AppController: ObservableObject {
         case .none:
             break
         }
-        if let toast, source != .pill { ui?.showToast(toast) }
+        if let toast, source.showsToast { ui?.showToast(toast) }
         refresh()
     }
 
-    func startRecording(app: MeetingDetector.App? = nil, source: ActionSource) {
+    func startRecording(source: ActionSource) { startRecording(app: nil, source: source) }
+
+    func startRecording(app: MeetingDetector.App?, source: ActionSource) {
         if machine.phase == .idle { pendingStart = (app, source) }
         perform(.start, source: source)
     }
@@ -226,15 +253,15 @@ final class AppController: ObservableObject {
                 detector.watch(Settings.autoStopOnCallEnd ? app : nil)
                 clock.elapsed = Format.elapsed(0)
                 startTicker()
-                if source != .pill { ui?.showToast("Recording started") }
+                if source.showsToast { ui?.showToast(tr(.toastRecordingStarted)) }
             } catch {
                 if let folder { MeetingFolders.removeIfEmpty(folder) }
                 machine.apply(.startFailed)
                 jobs.recordingActive = false
                 let micDenied = Permissions.microphone == .denied
-                self.error = PillError("Could not start recording: \(Format.clip(error.localizedDescription, 120))",
+                self.error = PillError(tr(.errCouldNotStart, Format.clip(error.localizedDescription, 120)),
                                        action: micDenied ? .openSettings(.microphone) : .none)
-                if source != .pill { ui?.showToast("Could not start recording") }
+                if source.showsToast { ui?.showToast(tr(.toastCouldNotStart)) }
             }
             refreshPermissions()
             refresh()
@@ -256,7 +283,7 @@ final class AppController: ObservableObject {
             resetLevels()
             recordingWarnings = []
             if !result.hasAudio {
-                error = PillError("The recording has no audio. Check microphone and system audio permissions.",
+                error = PillError(tr(.errNoAudio),
                                   action: permissionsNeedAttention ? .openSettings(Permissions.microphone == .granted ? .screenCapture : .microphone) : .none)
             } else if Settings.createNotesMode == .manual {
                 showReady(ReadyInfo(folder: result.folder.path, title: result.title, notesPath: nil))
@@ -280,9 +307,9 @@ final class AppController: ObservableObject {
         finishTask = Task { @MainActor in
             do {
                 try await session.discard()
-                ui?.showToast("Recording discarded")
+                ui?.showToast(tr(.toastDiscarded))
             } catch {
-                self.error = PillError("Could not delete the recording: \(error.localizedDescription)")
+                self.error = PillError(tr(.errCouldNotDelete, error.localizedDescription))
             }
             self.session = nil
             machine.apply(.finished)
@@ -328,7 +355,7 @@ final class AppController: ObservableObject {
         if systemAudio != health { systemAudio = health }
 
         if autoStop == nil, silence.update(now: now, levelDB: max(micDB, systemDB)) {
-            promptAutoStop(AutoStopPrompt(reason: "No sound for \(Settings.autoStopSilenceMinutes) min", remaining: 60, appEnded: false))
+            promptAutoStop(AutoStopPrompt(reason: tr(.autoStopSilence, Settings.autoStopSilenceMinutes), remaining: 60, appEnded: false))
         } else if var prompt = autoStop {
             prompt.remaining -= 1
             if prompt.remaining <= 0 {
@@ -341,8 +368,34 @@ final class AppController: ObservableObject {
         }
     }
 
-    /// Called by the pill at <= 12 fps while it is visible and recording.
-    func sampleLevels() {
+    /// Surfaces currently showing meters ("pill", "window"); levels are sampled only for them.
+    private var meterConsumers: Set<String> = []
+    private var levelTimer: Timer?
+
+    /// A meter surface became visible or hidden.
+    func setMeterVisible(_ id: String, _ visible: Bool) {
+        if visible { meterConsumers.insert(id) } else { meterConsumers.remove(id) }
+        updateLevelTimer()
+    }
+
+    /// <= 12 fps, only while recording and at least one meter is on screen.
+    private func updateLevelTimer() {
+        let needed = machine.phase == .recording && !meterConsumers.isEmpty
+        if needed, levelTimer == nil {
+            let timer = Timer(timeInterval: 1.0 / 12, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.sampleLevels() }
+            }
+            timer.tolerance = 0.03
+            RunLoop.main.add(timer, forMode: .common)
+            levelTimer = timer
+        } else if !needed, let timer = levelTimer {
+            timer.invalidate()
+            levelTimer = nil
+            sampleLevels()  // resets to 0 when not recording
+        }
+    }
+
+    private func sampleLevels() {
         guard let session, machine.phase == .recording else {
             resetLevels()
             return
@@ -383,7 +436,7 @@ final class AppController: ObservableObject {
 
     private func watchedAppEnded(_ app: MeetingDetector.App) {
         guard machine.phase == .recording, autoStop == nil, Settings.autoStopOnCallEnd else { return }
-        promptAutoStop(AutoStopPrompt(reason: "\(app.name) stopped using the microphone", remaining: 60, appEnded: true))
+        promptAutoStop(AutoStopPrompt(reason: tr(.autoStopAppEnded, app.name), remaining: 60, appEnded: true))
     }
 
     // MARK: - Meeting detection
@@ -421,7 +474,6 @@ final class AppController: ObservableObject {
             detector.stop()
             detectionDismiss(snooze: false)
         }
-        objectWillChange.send()
     }
 
     // MARK: - Processing
@@ -439,7 +491,7 @@ final class AppController: ObservableObject {
     }
 
     func cancelProcessing() {
-        if jobs.current != nil { ui?.showToast("Cancelling…") }
+        if jobs.current != nil { ui?.showToast(tr(.toastCancelling)) }
         jobs.cancelCurrent()
     }
 
@@ -475,9 +527,9 @@ final class AppController: ObservableObject {
                 notifier.notesReady(title: finalTitle, folder: url)
             }
         case let .failed(message):
-            error = PillError("Processing failed: \(Format.clip(message, 160))", action: .retry(folder: job.folder.path))
+            error = PillError(tr(.errProcessingFailed, Format.clip(message, 160)), action: .retry(folder: job.folder.path))
         case .cancelled:
-            ui?.showToast("Processing cancelled")
+            ui?.showToast(tr(.toastProcessingCancelled))
         }
         refresh()
     }
@@ -526,7 +578,7 @@ final class AppController: ObservableObject {
         case .retry(let folder): retry(folder: URL(fileURLWithPath: folder, isDirectory: true))
         case .openSettings(let kind):
             Permissions.openSettings(kind)
-            ui?.showOnboarding()
+            ui?.showMainWindow()
             dismissError()
         case .none: dismissError()
         }
@@ -596,6 +648,7 @@ final class AppController: ObservableObject {
         }
         writeState()
         refresh()
+        reloadRecents()
     }
 
     private func applyTitle(_ title: String, folder: URL) {
@@ -604,7 +657,7 @@ final class AppController: ObservableObject {
             let data = try MeetingRecord.updatingTitle(Data(contentsOf: url), title: title)
             try data.write(to: url, options: .atomic)
         } catch {
-            ui?.showToast("Could not rename: \(error.localizedDescription)")
+            ui?.showToast(tr(.toastCouldNotRename, error.localizedDescription))
         }
     }
 
@@ -639,10 +692,22 @@ final class AppController: ObservableObject {
     func refresh() {
         let next = PillState.derive(phase: machine.phase, error: error, processing: jobs.displaySnapshot, ready: readyShown,
                                     permissionsNeedAttention: permissionsNeedAttention)
+        let kindChanged = next.name != pill.name || next.isIdle != pill.isIdle
         if next != pill { pill = next }
+        let jobsActive = jobs.count > 0
+        if state.jobsActive != jobsActive { state.jobsActive = jobsActive }
         syncTitleDraft()
         writeState()
+        updateLevelTimer()
+        if kindChanged { reloadRecents() }
         ui?.pillStateChanged()
+    }
+
+    /// Re-reads the recent meetings list, only while the main window shows it.
+    func reloadRecents() {
+        guard ui?.isMainWindowVisible == true else { return }
+        let list = recents()
+        if state.recents != list { state.recents = list }
     }
 
     var processingSnapshot: ProcessingSnapshot? {
@@ -725,7 +790,7 @@ final class AppController: ObservableObject {
     private func register(_ text: String, fallback: String, command: RecorderCommand) -> HotKeySpec? {
         var spec = HotKeySpec.parse(text)
         if spec == nil {
-            hotkeyError = "Invalid hotkey \"\(text)\"; using \(fallback)."
+            hotkeyError = tr(.hotkeyInvalid, text, fallback)
             spec = HotKeySpec.parse(fallback)
         }
         guard let spec else { return nil }
@@ -734,7 +799,7 @@ final class AppController: ObservableObject {
         }) {
             hotKeys.append(registration)
         } else {
-            hotkeyError = "Global hotkey \(spec.display) is unavailable (used by another app?)."
+            hotkeyError = tr(.hotkeyUnavailable, spec.display)
         }
         return spec
     }
@@ -748,24 +813,17 @@ final class AppController: ObservableObject {
         case .pause: perform(.pause, source: .url)
         case .resume: perform(.resume, source: .url)
         case .toggle: perform(.toggleRecording, source: .url)
-        case .show: ui?.showControls(expand: true)
+        case .show: ui?.showMainWindow()
         }
     }
 
     // MARK: - Pill visibility
 
-    /// Whether the pill shows while idle (setting + "Hide for 1 hour").
-    var idlePillAllowed: Bool {
-        guard Settings.showIdlePill else { return false }
-        if let until = Settings.pillHiddenUntil, until > Date() { return false }
-        return true
-    }
-
     func hidePillForAnHour() {
         Settings.pillHiddenUntil = Date().addingTimeInterval(3600)
         scheduleIdlePillReshow()
         ui?.hidePill()
-        ui?.showToast("Hidden for 1 hour – Dock or menu › Show controls")
+        ui?.showToast(tr(.toastHiddenHour))
     }
 
     func unhidePill() {
@@ -794,7 +852,7 @@ final class AppController: ObservableObject {
         } else if let recent = recents().first(where: { $0.hasNotes }) {
             ui?.openNotes(recent.url)
         } else {
-            ui?.showToast("No notes yet")
+            ui?.showToast(tr(.toastNoNotes))
         }
     }
 
@@ -806,18 +864,18 @@ final class AppController: ObservableObject {
         let summaryURL = folder.appendingPathComponent(".work/summary.json")
         var text: String?
         if let data = try? Data(contentsOf: summaryURL), let summary = try? JSONDecoder().decode(MeetingSummary.self, from: data) {
-            text = summary.plainText
+            text = summary.plainText()
         }
         if text?.isEmpty ?? true {
             text = try? String(contentsOf: folder.appendingPathComponent("notes.md"), encoding: .utf8)
         }
         guard let text, !text.isEmpty else {
-            ui?.showToast("No summary yet")
+            ui?.showToast(tr(.toastNoSummary))
             return
         }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-        ui?.showToast("Summary copied")
+        ui?.showToast(tr(.toastSummaryCopied))
     }
 
     func openNotesFolder() {
@@ -829,14 +887,13 @@ final class AppController: ObservableObject {
 
     func setCreateNotesMode(_ mode: CreateNotesMode) {
         Settings.createNotesMode = mode
+        state.createNotesMode = mode
         jobs.pump()
         refresh()
-        objectWillChange.send()
     }
 
     func setSummaryModel(_ model: SummaryModel) {
         Settings.summaryModel = model
-        objectWillChange.send()
     }
 
     func chooseNotesFolder() {
@@ -845,7 +902,7 @@ final class AppController: ObservableObject {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.prompt = "Use Folder"
+        panel.prompt = tr(.actionUseFolder)
         panel.directoryURL = notesDir
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Settings.notesDir = url
@@ -858,13 +915,123 @@ final class AppController: ObservableObject {
     }
 }
 
-#if DEBUG
-extension AppController {
-    /// Offscreen previews only (`--render-pill-previews`): sets display state without side effects.
-    func debugSet(pill: PillState, machine: RecorderMachine, title: String = "Weekly sync") {
-        self.pill = pill
-        self.machine = machine
-        titleDraft = title
+// MARK: - AppCommands
+
+extension AppController: AppCommands {
+    func openNotes(_ folder: URL) { ui?.openNotes(folder) }
+    func showSettings() { ui?.showSettings() }
+    func showMainWindow() { ui?.showMainWindow() }
+    func resetPillPosition() { ui?.resetPillPosition() }
+    func setShowInDock(_ show: Bool) { ui?.setShowInDock(show) }
+
+    func setPillVisibility(whileRecording: Bool, whenIdle: Bool) {
+        Settings.showRecordingPill = whileRecording
+        Settings.showIdlePill = whenIdle
+        if whenIdle { unhidePill() }
+        ui?.pillStateChanged()
+    }
+
+    func setLanguage(_ language: UILanguage) {
+        guard language != L10n.language else { return }
+        Settings.uiLanguage = language
+        LanguageModel.shared.set(language)
+        refresh()
+        ui?.languageChanged()
+    }
+
+    func dismissGettingStarted() {
+        Settings.onboardingDone = true
+        state.showGettingStarted = false
+    }
+
+    /// Requests a permission that was never asked, otherwise opens its System Settings pane.
+    func fixPermission(_ kind: PermissionKind) {
+        switch kind {
+        case .microphone:
+            guard Permissions.microphone == .notDetermined else { return Permissions.openSettings(.microphone) }
+            Task { @MainActor in
+                _ = await Permissions.requestMicrophone()
+                refreshPermissions()
+            }
+        case .screenCapture:
+            // Shows the system prompt once; afterwards only System Settings can change it.
+            if !Permissions.requestScreenCapture() { Permissions.openSettings(.screenCapture) }
+            refreshPermissions()
+        case .notifications:
+            guard state.notifications == .notDetermined else { return Permissions.openSettings(.notifications) }
+            notifier.requestAuthorization { [weak self] _ in self?.refreshPermissions() }
+        }
+    }
+
+    func openPermissionSettings(_ kind: PermissionKind) { Permissions.openSettings(kind) }
+
+    /// Restarts the app so macOS applies a newly granted Screen & System Audio Recording permission.
+    /// Only while idle with no notes job (see `RelaunchPolicy`).
+    func relaunch() {
+        guard state.canRelaunch else {
+            ui?.showToast(tr(.relaunchBlocked))
+            return
+        }
+        let path = Bundle.main.bundlePath
+        let pid = ProcessInfo.processInfo.processIdentifier
+        // Waits (max ~10 s) for this process to exit, then opens a fresh instance.
+        let script = "for i in $(seq 1 50); do kill -0 \(pid) 2>/dev/null || break; sleep 0.2; done; sleep 0.3; /usr/bin/open -n -a \"$0\""
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", script, path]
+        do {
+            try process.run()
+        } catch {
+            ui?.showToast(error.localizedDescription)
+            return
+        }
+        NSApp.terminate(nil)
+    }
+
+    /// Captures mic + system audio for 5 s and plays a system sound from a separate process
+    /// (captured despite `excludesCurrentProcessAudio`). Nothing is written to disk.
+    func runAudioTest() {
+        guard !state.audioTest.running else { return }
+        guard machine.phase == .idle else {
+            state.audioTest = AudioTestState(result: [tr(.testStopFirst)])
+            return
+        }
+        state.audioTest = AudioTestState(running: true)
+        let micSink = MeterSink()
+        let systemSink = MeterSink()
+        let mic = MicRecorder(sink: micSink)
+        let system = SystemAudioCapture(sink: systemSink)
+        Task { @MainActor in
+            var micError: String?
+            var systemFailed = false
+            if await MicRecorder.ensurePermission() {
+                do { try mic.start() } catch { micError = error.localizedDescription }
+            } else {
+                micError = tr(.micAccessDenied)
+            }
+            do { try await system.start() } catch { systemFailed = true }
+            let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.state.audioTest.me = LevelMeter.displayValue(micSink.meter.level())
+                    self?.state.audioTest.them = LevelMeter.displayValue(systemSink.meter.level())
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            let player = Process()
+            player.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
+            player.arguments = ["/System/Library/Sounds/Glass.aiff"]
+            try? player.run()
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            timer.invalidate()
+            mic.stop()
+            await system.stop()
+            let me = micError.map { tr(.testMeError, $0) }
+                ?? (micSink.peakDB > -60 ? tr(.testMeOK, Int(micSink.peakDB)) : tr(.testMeSilent))
+            let them = systemFailed ? tr(.testThemNotPermitted)
+                : (systemSink.peakDB > -60 ? tr(.testThemOK) : tr(.testThemSilent))
+            state.audioTest = AudioTestState(result: [me, them])
+            refreshPermissions()
+        }
     }
 }
-#endif

@@ -15,12 +15,12 @@ struct RecorderMachineTests {
     @Test func secondStartIsIgnoredWithToast() {
         var machine = RecorderMachine()
         check(machine.handle(.start).effect == .startCapture)
-        check(machine.handle(.start) == RecorderOutcome(.none, toast: "Already recording"))
+        check(machine.handle(.start) == RecorderOutcome(.none, toast: .toastAlreadyRecording))
         machine.apply(.started)
         #expect(machine.phase == .recording)
-        check(machine.handle(.start) == RecorderOutcome(.none, toast: "Already recording"))
+        check(machine.handle(.start) == RecorderOutcome(.none, toast: .toastAlreadyRecording))
         _ = machine.handle(.pause)
-        check(machine.handle(.start) == RecorderOutcome(.none, toast: "Already recording"))
+        check(machine.handle(.start) == RecorderOutcome(.none, toast: .toastAlreadyRecording))
         #expect(machine.phase == .paused)
     }
 
@@ -32,7 +32,8 @@ struct RecorderMachineTests {
         machine.apply(.started)
         let stop = machine.handle(.toggleRecording)
         #expect(stop.effect == .stopCapture)
-        #expect(stop.toast == "Stopped – creating notes…")
+        #expect(stop.toast == .toastStoppedCreating)
+        #expect(stop.toast.map { tr($0, lang: .en) } == "Stopped – creating notes…")
         #expect(machine.phase == .stopping)
         machine.apply(.finished)
         #expect(machine.phase == .idle)
@@ -52,15 +53,15 @@ struct RecorderMachineTests {
 
     @Test func pauseHotkeyOnlyInRecordingOrPaused() {
         var idle = RecorderMachine()
-        check(idle.handle(.togglePause) == RecorderOutcome(.none, toast: "Not recording"))
+        check(idle.handle(.togglePause) == RecorderOutcome(.none, toast: .toastNotRecording))
         var stopping = RecorderMachine(phase: .stopping)
         check(stopping.handle(.togglePause).effect == .none)
 
         var machine = RecorderMachine(phase: .recording)
-        check(machine.handle(.togglePause) == RecorderOutcome(.pauseCapture, toast: "Paused"))
+        check(machine.handle(.togglePause) == RecorderOutcome(.pauseCapture, toast: .toastPaused))
         #expect(machine.phase == .paused)
         #expect(machine.isEnabled(.resume) && !machine.isEnabled(.pause))
-        check(machine.handle(.togglePause) == RecorderOutcome(.resumeCapture, toast: "Resumed"))
+        check(machine.handle(.togglePause) == RecorderOutcome(.resumeCapture, toast: .toastResumed))
         #expect(machine.phase == .recording)
     }
 
@@ -117,9 +118,15 @@ struct PillStateTests {
     @Test func labels() {
         var processing = snapshot
         processing.overall = 0.427
-        #expect(PillState.processing(processing).label == "Processing 42%")
-        #expect(PillState.ready(ready).label == "Done")
-        #expect(PillState.idle(attention: false).label == "Ready")
+        #expect(PillState.processing(processing).label(.en) == "Writing notes 42%")
+        #expect(PillState.processing(processing).label(.vi) == "Đang tạo ghi chú 42%")
+        #expect(PillState.ready(ready).label(.en) == "Done")
+        #expect(PillState.ready(ready).label(.vi) == "Xong")
+        #expect(PillState.idle(attention: false).label(.en) == "Ready")
+        #expect(PillState.idle(attention: false).label(.vi) == "Sẵn sàng")
+        #expect(PillState.recording.label(.vi) == "Đang ghi")
+        #expect(PillState.paused.label(.vi) == "Tạm dừng")
+        #expect(PillState.error(PillError("x")).label(.vi) == "Lỗi")
         #expect(PillState.paused.name == "paused")
     }
 }
@@ -158,11 +165,15 @@ struct FormattingTests {
     }
 
     @Test func eta() {
-        #expect(Format.eta(nil) == nil)
-        #expect(Format.eta(20) == "less than a minute left")
-        #expect(Format.eta(100) == "about 2 min left")
-        #expect(Format.eta(60) == "about 1 min left")
-        #expect(Format.eta(3900) == "about 1 h 5 min left")
+        #expect(Format.eta(nil, .en) == nil)
+        #expect(Format.eta(20, .en) == "less than a minute left")
+        #expect(Format.eta(100, .en) == "about 2 min left")
+        #expect(Format.eta(60, .en) == "about 1 min left")
+        #expect(Format.eta(3900, .en) == "about 1 h 5 min left")
+        #expect(Format.eta(100, .vi) == "Còn khoảng 2 phút")
+        #expect(Format.eta(3900, .vi) == "Còn khoảng 1 giờ 5 phút")
+        #expect(Format.duration(45, .vi) == "45 giây")
+        #expect(Format.duration(3900, .en) == "1 h 5 min")
     }
 }
 
