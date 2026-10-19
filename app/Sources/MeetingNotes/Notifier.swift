@@ -1,82 +1,70 @@
 import AppKit
 import UserNotifications
 
-/// User notifications: meeting detected (with a "Start recording" action), notes ready, failures.
+/// Optional "Notes ready" notifications. Never asks for permission by itself (onboarding does).
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
-    static let meetingCategory = "MEETING_DETECTED"
-    static let startAction = "START_RECORDING"
     static let notesCategory = "NOTES_READY"
-    static let meetingRequestID = "meeting-detected"
 
-    /// Called on the main queue with the detected app name.
-    var onStartRecording: ((String?) -> Void)?
-    private(set) var isAuthorized = false
+    /// Called on the main queue with the meeting folder when a "Notes ready" notification is clicked.
+    var onOpenNotes: ((URL) -> Void)?
 
     private var center: UNUserNotificationCenter? { AppInfo.isBundled ? .current() : nil }
 
     func setup() {
         guard let center else { return }
         center.delegate = self
-        let start = UNNotificationAction(identifier: Self.startAction, title: "Start recording", options: [])
         center.setNotificationCategories([
-            UNNotificationCategory(identifier: Self.meetingCategory, actions: [start], intentIdentifiers: [], options: []),
             UNNotificationCategory(identifier: Self.notesCategory, actions: [], intentIdentifiers: [], options: []),
         ])
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            DispatchQueue.main.async { self.isAuthorized = granted }
+    }
+
+    /// Main-queue callback with the current authorization status (nil when unavailable, e.g. unbundled).
+    func status(_ completion: @escaping (UNAuthorizationStatus?) -> Void) {
+        guard let center else {
+            completion(nil)
+            return
+        }
+        center.getNotificationSettings { settings in
+            let status = settings.authorizationStatus
+            DispatchQueue.main.async { completion(status) }
         }
     }
 
-    func meetingDetected(appName: String) {
-        post(id: Self.meetingRequestID, title: "Meeting detected — start recording?",
-             body: "\(appName) is using the microphone.", category: Self.meetingCategory, info: ["app": appName])
+    func requestAuthorization(_ completion: @escaping (Bool) -> Void) {
+        guard let center else {
+            completion(false)
+            return
+        }
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            DispatchQueue.main.async { completion(granted) }
+        }
     }
 
-    func clearMeetingDetected() {
-        center?.removeDeliveredNotifications(withIdentifiers: [Self.meetingRequestID])
-        center?.removePendingNotificationRequests(withIdentifiers: [Self.meetingRequestID])
-    }
-
-    func notesReady(title: String, notesPath: String) {
-        post(id: UUID().uuidString, title: "Notes ready: \(title)", body: "Click to open the notes.",
-             category: Self.notesCategory, info: ["notes": notesPath])
-    }
-
-    func failure(title: String, message: String) {
-        post(id: UUID().uuidString, title: title, body: String(message.prefix(200)), category: nil, info: [:])
-    }
-
-    private func post(id: String, title: String, body: String, category: String?, info: [String: String]) {
+    func notesReady(title: String, folder: URL) {
         guard let center else { return }
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-        content.userInfo = info
-        if let category { content.categoryIdentifier = category }
-        center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+        center.getNotificationSettings { settings in
+            guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "Notes ready: \(title)"
+            content.body = "Click to open the notes."
+            content.userInfo = ["folder": folder.path]
+            content.categoryIdentifier = Self.notesCategory
+            center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        }
     }
 
     // MARK: - UNUserNotificationCenterDelegate
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .sound])
+        completionHandler([.banner])
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        let content = response.notification.request.content
-        let action = response.actionIdentifier
-        let app = content.userInfo["app"] as? String
-        let notes = content.userInfo["notes"] as? String
-        let isMeeting = content.categoryIdentifier == Self.meetingCategory
-        DispatchQueue.main.async {
-            if isMeeting, action == Self.startAction {
-                self.onStartRecording?(app)
-            } else if let notes, action == UNNotificationDefaultActionIdentifier {
-                NSWorkspace.shared.open(URL(fileURLWithPath: notes))
-            }
+        let folder = response.notification.request.content.userInfo["folder"] as? String
+        if let folder, response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+            DispatchQueue.main.async { self.onOpenNotes?(URL(fileURLWithPath: folder, isDirectory: true)) }
         }
         completionHandler()
     }

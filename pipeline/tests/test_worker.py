@@ -58,3 +58,21 @@ def test_worker_exits_when_idle(monkeypatch):
     w.cfg.worker_idle_release_min = 0
     assert w._idle_exit()
     assert events(out)[-1]["status"] == "exit"
+
+
+def test_cancel_before_job_starts_is_not_lost(meeting, stubs, monkeypatch):  # noqa: F811
+    import sys
+
+    w, out = make_worker(monkeypatch)
+    lines = io.StringIO(json.dumps({"cmd": "process", "job": "early", "folder": str(meeting)}) + "\n"
+                        + json.dumps({"cmd": "cancel"}) + "\n")
+    monkeypatch.setattr(sys, "stdin", lines)
+    w._read_stdin()  # both commands arrive before the main loop picks up the job
+    w._process(w.commands.get_nowait())
+    assert events(out)[-1] == {"event": "job_end", "job": "early", "exit": 3}
+    assert w.inflight == 0 and not w.cancel.is_set()
+    # A stale cancel with nothing in flight does not affect the next job.
+    w.commands.get_nowait()  # the quit sentinel from EOF
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"cmd": "cancel"}) + "\n"))
+    w._read_stdin()
+    assert not w.cancel.is_set()

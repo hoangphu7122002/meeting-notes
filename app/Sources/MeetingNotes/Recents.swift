@@ -2,15 +2,16 @@ import Foundation
 
 struct RecentMeeting: Identifiable {
     enum Status: Equatable {
-        case done, processing, queued, recording, failed(String?), notProcessed
+        case done, processing, queued, recording, failed(String?), cancelled, notProcessed
 
         var label: String {
             switch self {
-            case .done: return "done"
+            case .done: return "ready"
             case .processing: return "processing"
             case .queued: return "queued"
             case .recording: return "recording"
             case .failed: return "failed"
+            case .cancelled: return "cancelled"
             case .notProcessed: return "not processed"
             }
         }
@@ -53,17 +54,28 @@ enum MeetingFolders {
     }
 
     static func key(_ url: URL) -> String { url.standardizedFileURL.path }
+
+    static func title(of folder: URL) -> String {
+        (readJSON(folder.appendingPathComponent("meeting.json"))?["title"] as? String) ?? folder.lastPathComponent
+    }
+
+    static func readJSON(_ url: URL) -> [String: Any]? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
 }
 
 enum Recents {
     struct Context {
         var recording: URL?
         var processing: URL?
+        var processingPercent: Int?
         var jobActive = false
         var queued: [URL] = []
     }
 
     /// Meeting folders (containing meeting.json or notes.md), newest first by creation date.
+    /// Read on demand (menu open), never on a timer.
     static func load(dir: URL, limit: Int = 8, context: Context) -> [RecentMeeting] {
         let fm = FileManager.default
         let keys: [URLResourceKey] = [.isDirectoryKey, .creationDateKey]
@@ -78,8 +90,7 @@ enum Recents {
         let queued = Set(context.queued.map(MeetingFolders.key))
 
         return folders.sorted { $0.1 > $1.1 }.prefix(limit).map { url, date in
-            let meeting = readJSON(url.appendingPathComponent("meeting.json"))
-            let title = (meeting?["title"] as? String) ?? url.lastPathComponent
+            let title = MeetingFolders.title(of: url)
             let key = MeetingFolders.key(url)
             let status: RecentMeeting.Status
             if let recording = context.recording, MeetingFolders.key(recording) == key {
@@ -89,12 +100,14 @@ enum Recents {
             } else if queued.contains(key) {
                 status = .queued
             } else {
-                let pipeline = readJSON(url.appendingPathComponent("status.json"))
+                let pipeline = MeetingFolders.readJSON(url.appendingPathComponent("status.json"))
                 switch pipeline?["state"] as? String {
                 case "done" where fm.fileExists(atPath: url.appendingPathComponent("notes.md").path):
                     status = .done
                 case "failed":
                     status = .failed(pipeline?["error"] as? String)
+                case "cancelled":
+                    status = .cancelled
                 case "running" where context.jobActive:
                     // The pipeline may have renamed the folder of the active job.
                     status = .processing
@@ -104,10 +117,5 @@ enum Recents {
             }
             return RecentMeeting(url: url, title: title, date: date, status: status)
         }
-    }
-
-    private static func readJSON(_ url: URL) -> [String: Any]? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 }

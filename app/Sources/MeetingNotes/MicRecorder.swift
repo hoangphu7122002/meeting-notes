@@ -1,17 +1,19 @@
 import AVFoundation
+import MeetingNotesCore
 
-/// Records the default input device through an `AVAudioEngine` input tap.
+/// Captures the default input device through an `AVAudioEngine` input tap into a sink.
+/// Pausing stops the engine, so the system microphone indicator turns off.
 final class MicRecorder {
-    let writer: TrackWriter
+    let sink: AudioSink
     let deviceName: String?
     var onWarning: ((String) -> Void)?
 
     private let engine = AVAudioEngine()
     private var observer: NSObjectProtocol?
-    private var stopped = false
+    private var running = false
 
-    init(folder: URL) {
-        writer = TrackWriter(url: folder.appendingPathComponent("mic.wav"), label: "mic")
+    init(sink: AudioSink) {
+        self.sink = sink
         deviceName = AVCaptureDevice.default(for: .audio)?.localizedName
     }
 
@@ -41,12 +43,22 @@ final class MicRecorder {
         ) { [weak self] _ in self?.restartAfterConfigurationChange() }
     }
 
-    func stop() {
-        stopped = true
-        if let observer { NotificationCenter.default.removeObserver(observer) }
-        observer = nil
+    func pause() {
+        guard running else { return }
+        running = false
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+    }
+
+    func resume() throws {
+        guard !running else { return }
+        try startEngine()
+    }
+
+    func stop() {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        observer = nil
+        pause()
     }
 
     private func startEngine() throws {
@@ -55,7 +67,7 @@ final class MicRecorder {
         guard format.sampleRate > 0, format.channelCount > 0 else {
             throw AppError("No microphone input device available")
         }
-        let writer = self.writer
+        let sink = self.sink
         input.installTap(onBus: 0, bufferSize: 4096, format: nil) { buffer, time in
             let seconds: Double
             if time.isHostTimeValid {
@@ -64,14 +76,21 @@ final class MicRecorder {
                 seconds = AVAudioTime.seconds(forHostTime: mach_absolute_time())
                     - Double(buffer.frameLength) / buffer.format.sampleRate
             }
-            writer.append(buffer, hostSeconds: seconds)
+            sink.append(buffer, hostSeconds: seconds)
         }
         engine.prepare()
-        try engine.start()
+        do {
+            try engine.start()
+        } catch {
+            input.removeTap(onBus: 0)
+            throw error
+        }
+        running = true
     }
 
     private func restartAfterConfigurationChange() {
-        guard !stopped else { return }
+        guard running else { return }
+        running = false
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         do {

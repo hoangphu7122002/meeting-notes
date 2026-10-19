@@ -1,6 +1,9 @@
 import AVFoundation
+import MeetingNotesCore
 
 /// One meeting recording: microphone + system audio into a meeting folder, plus `meeting.json`.
+/// Both tracks are positioned in recorded time by a shared `RecordingClock`, so pausing
+/// excludes the paused period from the files and the tracks stay aligned after resume.
 @MainActor
 final class RecordingSession {
     struct Options {
@@ -25,28 +28,41 @@ final class RecordingSession {
 
     struct Result {
         let folder: URL
+        let title: String
         let tracks: [String: Track]
         let warnings: [String]
+        let recordedDuration: Double
+        let pauses: [MeetingRecord.PauseEntry]
         var hasAudio: Bool { !tracks.isEmpty }
     }
 
     let folder: URL
-    let options: Options
-    let startedAt: Date
-    private let startHostSeconds: Double
-    private let mic: MicRecorder?
-    private let system: SystemAudioCapture?
+    let clock: RecordingClock
+    let micWriter: TrackWriter?
+    let systemWriter: TrackWriter?
+    /// False when system audio could not be started (permission or no display).
+    let systemAudioAvailable: Bool
+    private(set) var record: MeetingRecord
     private(set) var warnings: [String]
     var onWarningsChanged: (([String]) -> Void)?
 
-    private init(folder: URL, options: Options, startedAt: Date, startHostSeconds: Double,
-                 mic: MicRecorder?, system: SystemAudioCapture?, warnings: [String]) {
+    private let mic: MicRecorder?
+    private let system: SystemAudioCapture?
+    private var pauseDates: [Date] = []
+    /// Serializes capture stop/start work of pause/resume/stop.
+    private var operation: Task<Void, Never>?
+    private var finished = false
+
+    private init(folder: URL, record: MeetingRecord, clock: RecordingClock, mic: MicRecorder?, micWriter: TrackWriter?,
+                 system: SystemAudioCapture?, systemWriter: TrackWriter?, warnings: [String]) {
         self.folder = folder
-        self.options = options
-        self.startedAt = startedAt
-        self.startHostSeconds = startHostSeconds
+        self.record = record
+        self.clock = clock
         self.mic = mic
+        self.micWriter = micWriter
         self.system = system
+        self.systemWriter = systemWriter
+        self.systemAudioAvailable = system != nil
         self.warnings = warnings
     }
 
@@ -57,14 +73,17 @@ final class RecordingSession {
         let micAllowed = await MicRecorder.ensurePermission()
 
         let startedAt = Date()
-        let startHostSeconds = AVAudioTime.seconds(forHostTime: mach_absolute_time())
+        let clock = RecordingClock(startHost: HostClock.now())
 
         var mic: MicRecorder?
+        var micWriter: TrackWriter?
         if micAllowed {
-            let recorder = MicRecorder(folder: folder)
+            let writer = TrackWriter(url: folder.appendingPathComponent("mic.wav"), label: "mic", clock: clock)
+            let recorder = MicRecorder(sink: writer)
             do {
                 try recorder.start()
                 mic = recorder
+                micWriter = writer
             } catch {
                 warnings.append("Microphone unavailable: \(error.localizedDescription)")
             }
@@ -73,10 +92,13 @@ final class RecordingSession {
         }
 
         var system: SystemAudioCapture?
-        let capture = SystemAudioCapture(folder: folder)
+        var systemWriter: TrackWriter?
+        let writer = TrackWriter(url: folder.appendingPathComponent("system.wav"), label: "system", clock: clock)
+        let capture = SystemAudioCapture(sink: writer)
         do {
             try await capture.start()
             system = capture
+            systemWriter = writer
         } catch {
             warnings.append("System audio not recorded: \(error.localizedDescription)")
         }
@@ -85,11 +107,13 @@ final class RecordingSession {
             throw AppError("No audio source could be started. " + warnings.joined(separator: " "))
         }
 
-        let session = RecordingSession(folder: folder, options: options, startedAt: startedAt,
-                                       startHostSeconds: startHostSeconds, mic: mic, system: system, warnings: warnings)
+        var record = MeetingRecord(title: options.title, titleSource: options.titleSource, appHint: options.appHint, startedAt: startedAt)
+        record.warnings = warnings
+        let session = RecordingSession(folder: folder, record: record, clock: clock, mic: mic, micWriter: micWriter,
+                                       system: system, systemWriter: systemWriter, warnings: warnings)
         mic?.onWarning = { [weak session] in session?.addWarning($0) }
         system?.onWarning = { [weak session] in session?.addWarning($0) }
-        session.writeMeetingJSON(ended: nil, tracks: [:])
+        session.writeMeetingJSON()
         // Rewrite once the first samples arrived so a crash still leaves usable track offsets.
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak session] in
             MainActor.assumeIsolated { session?.writeProvisionalMeetingJSON() }
@@ -97,27 +121,99 @@ final class RecordingSession {
         return session
     }
 
+    var startedAt: Date { record.startedAt }
+    var title: String { record.title }
+    var isPaused: Bool { clock.isPaused }
+    /// Recorded seconds so far (paused time excluded).
+    var recordedSeconds: Double { clock.recordedDuration(atHost: HostClock.now()) }
+
+    func setTitle(_ title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != record.title else { return }
+        record.title = trimmed
+        record.titleSource = "user"
+        writeMeetingJSON()
+    }
+
+    /// Stops both captures (mic indicator off); buffers already in flight are dropped by the clock.
+    func pause() {
+        guard !finished, clock.pause(atHost: HostClock.now()) else { return }
+        pauseDates.append(Date())
+        let mic = self.mic, system = self.system
+        enqueue {
+            mic?.pause()
+            await system?.pause()
+        }
+        writeMeetingJSON()
+    }
+
+    func resume() {
+        guard !finished, clock.resume(atHost: HostClock.now()) else { return }
+        let mic = self.mic, system = self.system
+        enqueue { [weak self] in
+            do { try mic?.resume() } catch { self?.addWarning("Microphone could not resume: \(error.localizedDescription)") }
+            do { try await system?.resume() } catch {
+                self?.addWarning("System audio could not resume: \(error.localizedDescription)")
+            }
+        }
+        writeMeetingJSON()
+    }
+
     func stop() async -> Result {
+        let stopHost = HostClock.now()
+        clock.stop(atHost: stopHost)
+        finished = true
+        await operation?.value
         mic?.stop()
         await system?.stop()
         let ended = Date()
+        let end = clock.recordedDuration(atHost: stopHost)
 
         var tracks: [String: Track] = [:]
-        if let mic {
-            let stats = mic.writer.finish()
+        if let mic, let micWriter {
+            let stats = micWriter.finish(endTime: end)
             check(stats, name: "Microphone", file: "mic.wav", silentWarning: true)
             tracks["mic"] = track(stats, file: "mic.wav", device: mic.deviceName)
         }
-        if let system {
-            let stats = system.writer.finish()
+        if let systemWriter {
+            let stats = systemWriter.finish(endTime: end)
             check(stats, name: "System audio", file: "system.wav", silentWarning: false)
             tracks["system"] = track(stats, file: "system.wav", device: nil)
         }
-        writeMeetingJSON(ended: ended, tracks: tracks)
-        return Result(folder: folder, tracks: tracks, warnings: warnings)
+        record.endedAt = ended
+        record.durationSec = end
+        record.wallDurationSec = ended.timeIntervalSince(record.startedAt)
+        writeMeetingJSON(tracks: tracks, nowHost: stopHost)
+        return Result(folder: folder, title: record.title, tracks: tracks, warnings: warnings, recordedDuration: end,
+                      pauses: record.pauses)
+    }
+
+    /// Stops capture and deletes this recording's folder.
+    func discard() async throws {
+        clock.stop(atHost: HostClock.now())
+        finished = true
+        await operation?.value
+        mic?.stop()
+        await system?.stop()
+        _ = micWriter?.finish(endTime: nil)
+        _ = systemWriter?.finish(endTime: nil)
+        try FileManager.default.removeItem(at: folder)
     }
 
     // MARK: - Private
+
+    private func writeProvisionalMeetingJSON() {
+        guard !finished else { return }
+        writeMeetingJSON()
+    }
+
+    private func enqueue(_ work: @escaping @MainActor () async -> Void) {
+        let previous = operation
+        operation = Task { @MainActor in
+            await previous?.value
+            await work()
+        }
+    }
 
     private func addWarning(_ warning: String) {
         guard !warnings.contains(warning) else { return }
@@ -138,57 +234,31 @@ final class RecordingSession {
     }
 
     private func track(_ stats: TrackWriter.Stats, file: String, device: String?) -> Track? {
-        guard stats.frames > 0, let first = stats.firstSampleSeconds else { return nil }
-        return Track(file: file, startOffset: max(0, first - startHostSeconds), sampleRate: stats.sampleRate,
-                     device: device, duration: stats.duration, peak: stats.peak)
+        guard stats.frames > 0, let offset = stats.startOffset else { return nil }
+        return Track(file: file, startOffset: offset, sampleRate: stats.sampleRate, device: device,
+                     duration: stats.duration, peak: stats.peak)
     }
 
-    private func writeProvisionalMeetingJSON() {
+    private func currentTracks() -> [String: Track] {
         var tracks: [String: Track] = [:]
-        if let mic { tracks["mic"] = track(mic.writer.currentStats, file: "mic.wav", device: mic.deviceName) }
-        if let system { tracks["system"] = track(system.writer.currentStats, file: "system.wav", device: nil) }
-        writeMeetingJSON(ended: nil, tracks: tracks)
+        if let micWriter { tracks["mic"] = track(micWriter.currentStats, file: "mic.wav", device: mic?.deviceName) }
+        if let systemWriter { tracks["system"] = track(systemWriter.currentStats, file: "system.wav", device: nil) }
+        return tracks
     }
 
-    private func writeMeetingJSON(ended: Date?, tracks: [String: Track]) {
-        var trackObjects: [String: Any] = [:]
-        for (key, track) in tracks {
-            var object: [String: Any] = [
-                "file": track.file,
-                "start_offset_sec": Self.decimal(track.startOffset, places: 3),
-                "sample_rate": Int(track.sampleRate),
-            ]
-            if let device = track.device { object["device"] = device }
-            trackObjects[key] = object
+    private func writeMeetingJSON(tracks: [String: Track]? = nil, nowHost: Double = HostClock.now()) {
+        let tracks = tracks ?? currentTracks()
+        record.tracks = tracks.mapValues {
+            MeetingRecord.Track(file: $0.file, startOffsetSec: $0.startOffset, sampleRate: Int($0.sampleRate), device: $0.device)
         }
-        let json: [String: Any] = [
-            "version": 1,
-            "title": options.title,
-            "title_source": options.titleSource,
-            "app_hint": options.appHint ?? NSNull(),
-            "started_at": Self.iso.string(from: startedAt),
-            "ended_at": ended.map { Self.iso.string(from: $0) } ?? NSNull(),
-            "duration_sec": ended.map { Self.decimal($0.timeIntervalSince(startedAt), places: 2) } ?? NSNull(),
-            "tracks": trackObjects,
-            "warnings": warnings,
-        ]
+        record.pauses = zip(clock.pauseList, pauseDates).map { pause, date in
+            MeetingRecord.PauseEntry(atSec: pause.atRecorded, durationSec: pause.wallDuration(nowHost: nowHost), startedAt: date)
+        }
+        record.warnings = warnings
         do {
-            let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-            try data.write(to: folder.appendingPathComponent("meeting.json"), options: .atomic)
+            try record.jsonData().write(to: folder.appendingPathComponent("meeting.json"), options: .atomic)
         } catch {
             addWarning("Could not write meeting.json: \(error.localizedDescription)")
         }
     }
-
-    /// Rounded number that serializes without binary floating-point noise (0.386, not 0.38600000000000001).
-    private static func decimal(_ value: Double, places: Int) -> NSDecimalNumber {
-        NSDecimalNumber(string: String(format: "%.\(places)f", value), locale: Locale(identifier: "en_US_POSIX"))
-    }
-
-    private static let iso: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        formatter.timeZone = .current
-        return formatter
-    }()
 }

@@ -1,16 +1,24 @@
 import AVFoundation
+import MeetingNotesCore
 import ScreenCaptureKit
 
-/// Captures system audio output (all apps except this one) with ScreenCaptureKit.
+/// Captures system audio output (all apps except this one) with ScreenCaptureKit into a sink.
+/// Pausing stops the stream; resuming starts a new one.
 final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
-    let writer: TrackWriter
+    let sink: AudioSink
     var onWarning: ((String) -> Void)?
 
-    private var stream: SCStream?
+    private let lock = NSLock()
+    private var currentStream: SCStream?
+    /// Accessed from async contexts and SCStream callbacks.
+    private var stream: SCStream? {
+        get { lock.withLock { currentStream } }
+        set { lock.withLock { currentStream = newValue } }
+    }
     private let sampleQueue = DispatchQueue(label: "meetingnotes.system-audio", qos: .userInitiated)
 
-    init(folder: URL) {
-        writer = TrackWriter(url: folder.appendingPathComponent("system.wav"), label: "system")
+    init(sink: AudioSink) {
+        self.sink = sink
     }
 
     func start() async throws {
@@ -30,10 +38,11 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         config.excludesCurrentProcessAudio = true
         config.sampleRate = 48_000
         config.channelCount = 1
-        // Video is required by SCStream but unused: keep it as cheap as possible.
+        // Video is required by SCStream but unused: keep it as cheap as possible (2×2 px, 1 fps).
         config.width = 2
         config.height = 2
         config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+        config.queueDepth = 3
         config.showsCursor = false
 
         let filter = SCContentFilter(display: display, excludingWindows: [])
@@ -45,22 +54,32 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         self.stream = stream
     }
 
-    func stop() async {
+    func pause() async {
         guard let stream else { return }
         self.stream = nil
         try? await stream.stopCapture()
     }
+
+    func resume() async throws {
+        guard stream == nil else { return }
+        try await start()
+    }
+
+    func stop() async { await pause() }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio, sampleBuffer.isValid, let buffer = AudioConvert.pcmBuffer(from: sampleBuffer) else { return }
         // ScreenCaptureKit timestamps use the host-time clock.
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         let seconds = pts.isValid ? pts.seconds : AVAudioTime.seconds(forHostTime: mach_absolute_time())
-        writer.append(buffer, hostSeconds: seconds)
+        sink.append(buffer, hostSeconds: seconds)
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         let message = "System audio capture stopped: \(error.localizedDescription)"
-        DispatchQueue.main.async { self.onWarning?(message) }
+        DispatchQueue.main.async {
+            guard self.stream === stream else { return }
+            self.onWarning?(message)
+        }
     }
 }

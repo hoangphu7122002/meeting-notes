@@ -35,6 +35,7 @@ class Worker:
         self.commands: queue.Queue = queue.Queue()
         self.cancel = threading.Event()
         self.busy = False
+        self.inflight = 0  # process commands received but not finished (guarded by lock)
         self.cfg = Config.load()
         self.models = Models(self.cfg, keep=self.cfg.keep_models_warm, log=lambda m: print(redact(m), file=sys.stderr, flush=True))
 
@@ -54,9 +55,14 @@ class Worker:
                 self.send({"event": "worker", "status": "error", "message": "invalid JSON command"})
                 continue
             if cmd.get("cmd") == "cancel":
-                if self.busy:
-                    self.cancel.set()
+                # Applies to the job that is running or already received (no race with job start).
+                with self.lock:
+                    if self.inflight > 0:
+                        self.cancel.set()
                 continue
+            if cmd.get("cmd") == "process":
+                with self.lock:
+                    self.inflight += 1
             if cmd.get("cmd") == "ping":
                 self.send({"event": "pong", "busy": self.busy, "warm": self.models.loaded})
                 continue
@@ -114,12 +120,12 @@ class Worker:
         job = str(cmd.get("job") or "job")
         folder = Path(str(cmd.get("folder") or "")).expanduser()
         if not folder.is_dir():
+            self._finish_job()
             self.send({"event": "error", "job": job, "message": f"Not a folder: {folder}"})
             self.send({"event": "job_end", "job": job, "exit": 2})
             return
         self.cfg = Config.load()
         self.models.update_config(self.cfg)
-        self.cancel.clear()
         self.busy = True
         reporter = Reporter(json_mode=True, out=_Locked(self), job=job, cancel=self.cancel)
         code = 0
@@ -131,9 +137,14 @@ class Worker:
             code = 1
         finally:
             self.busy = False
-            self.cancel.clear()
+            self._finish_job()
             self.models.last_used = time.monotonic()
         self.send({"event": "job_end", "job": job, "exit": code})
+
+    def _finish_job(self) -> None:
+        with self.lock:
+            self.inflight = max(0, self.inflight - 1)
+            self.cancel.clear()
 
 
 class _Locked:

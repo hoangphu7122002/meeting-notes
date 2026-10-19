@@ -2,7 +2,10 @@
 # Build MeetingNotes.app (release), ad-hoc sign it and install it to ~/Applications.
 #
 # Usage: scripts/build-app.sh [--no-install]
-# Env:   CODESIGN_IDENTITY  signing identity (default "-" = ad-hoc). A stable self-signed identity
+# Env:   CODESIGN_IDENTITY  signing identity. Default: the local self-signed identity created by
+#                           scripts/setup-signing.sh (created on first build), so macOS keeps
+#                           Microphone / Screen & System Audio permissions across rebuilds.
+#                           "-" = ad-hoc (permissions reset on every rebuild). A stable self-signed identity
 #                           keeps macOS privacy permissions across rebuilds.
 set -euo pipefail
 
@@ -13,7 +16,7 @@ APP="$BUILD_DIR/MeetingNotes.app"
 INSTALL_DIR="$HOME/Applications"
 BUNDLE_ID="com.hoangphu.meetingnotes"
 VERSION="0.1.0"
-IDENTITY="${CODESIGN_IDENTITY:--}"
+IDENTITY="${CODESIGN_IDENTITY:-}"
 INSTALL=1
 
 for arg in "$@"; do
@@ -55,7 +58,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
-  <key>LSUIElement</key><true/>
+  <key>LSUIElement</key><false/>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>$BUNDLE_ID</string>
+      <key>CFBundleURLSchemes</key><array><string>meetingnotes</string></array>
+    </dict>
+  </array>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>Meeting Notes records your microphone during meetings you choose to record.</string>
   <key>NSScreenCaptureUsageDescription</key><string>Meeting Notes records system audio (other participants) during meetings you choose to record. No screen content is saved.</string>
@@ -68,6 +78,9 @@ PLIST
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 plutil -lint "$APP/Contents/Info.plist"
 
+if [[ -z "$IDENTITY" ]]; then
+  IDENTITY="$("$ROOT/scripts/setup-signing.sh")"
+fi
 echo "==> codesign ($IDENTITY)"
 codesign --force --deep --sign "$IDENTITY" --identifier "$BUNDLE_ID" "$APP"
 codesign --verify --strict "$APP"

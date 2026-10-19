@@ -1,9 +1,9 @@
 # Meeting Notes
 
-A free meeting-notes app for macOS that runs entirely on your Mac. It lives in the menu bar: click **Start Recording** (or press **⌃⌥⌘R**) when a meeting starts and **Stop** when it ends. It records your microphone and the other participants (system audio from Zoom, Google Meet, Teams and so on). It then transcribes the audio, labels the speakers and writes a summary with action items, all locally.
+A free meeting-notes app for macOS that runs entirely on your Mac. A small pill at the bottom of the screen shows what it is doing: hover it and click **Start** (or press **⌃⌥⌘R**) when a meeting starts, and **Stop & create notes** when it ends. It records your microphone and the other participants (system audio from Zoom, Google Meet, Teams and so on). It then transcribes the audio, labels the speakers and writes a summary with action items, all locally.
 
-- **Menu bar app** (`app/`, Swift/SwiftUI): records the mic and system audio as two separate tracks, using ScreenCaptureKit for system audio (no BlackHole needed). It also has a global hotkey, launch at login, meeting detection and a list of recent meetings.
-- **Pipeline** (`pipeline/`, Python/uv): handles transcription (mlx-whisper large-v3-turbo on the Apple GPU), speaker diarization (pyannote, with a fallback) and the summary (Ollama `qwen3:8b`). The app runs it after every recording, and you can run it yourself from the CLI.
+- **App** (`app/`, Swift/SwiftUI): records the mic and system audio as two separate tracks, using ScreenCaptureKit for system audio (no BlackHole needed). Floating pill, Dock icon and a compact menu bar icon, global hotkeys, pause/resume, meeting detection, a notes viewer and a list of recent meetings.
+- **Pipeline** (`pipeline/`, Python/uv): handles transcription (mlx-whisper large-v3-turbo on the Apple GPU), speaker diarization (pyannote, with a fallback) and the summary (Ollama `qwen3:4b` by default, `qwen3:8b` optional). The app runs it after every recording, and you can run it yourself from the CLI.
 
 Nothing is sent to a cloud service. The only network traffic is a one-time download of open model weights (Hugging Face, Ollama registry).
 
@@ -19,8 +19,8 @@ scripts/install.sh
 The script does the following:
 1. `brew install ffmpeg ollama` and `brew services start ollama`.
 2. `uv sync` for the pipeline.
-3. `meeting-notes setup` downloads the models: whisper turbo (~1.6 GB), the speaker-embedding model (~30 MB), `qwen3:8b` (~5.2 GB) and pyannote if you have access.
-4. Builds `MeetingNotes.app` and installs it to `~/Applications/MeetingNotes.app`.
+3. `meeting-notes setup` downloads the models: whisper turbo (~1.6 GB), the speaker-embedding model (~30 MB), `qwen3:4b` (~2.5 GB) and pyannote if you have access.
+4. Builds `MeetingNotes.app`, signs it with a local self-signed identity (created once by `scripts/setup-signing.sh`) and installs it to `~/Applications/MeetingNotes.app`.
 
 To rebuild only the app: `scripts/build-app.sh`. To check the setup: `uv run --project pipeline meeting-notes doctor`.
 
@@ -41,32 +41,47 @@ The method used is recorded in `transcript.json` (`diarization.methods`) and not
 
 ## First run (permissions)
 
-1. Open `~/Applications/MeetingNotes.app`. A waveform icon appears in the menu bar; there is no Dock icon. Allow **notifications** when asked; they are used for "Meeting detected" and "Notes ready".
+1. Open `~/Applications/MeetingNotes.app`. A setup window lists the permissions (with a 5 s live Me/Them test), the pill appears just above the Dock, and the app has a Dock icon. Notifications are optional ("Notes ready"). Reopen the setup window later from the menu or Dock › Permissions….
 2. Click **Start Recording**. macOS asks for:
    - **Microphone**: click Allow.
    - **Screen & System Audio Recording**: macOS opens System Settings › Privacy & Security › Screen & System Audio Recording. Enable **MeetingNotes**, then quit and reopen the app (menu › Quit Meeting Notes). Only audio is captured; no screen content is saved.
-3. The first recording before step 2 is complete may be mic-only. The menu shows a warning.
+3. The first recording before step 2 is complete may be mic-only. The pill shows a warning ("System audio not permitted").
 4. Optional: **Settings › Launch at Login**. If macOS asks for approval, enable it in System Settings › General › Login Items.
 
 Notes:
-- **Permissions after a rebuild:** the app is ad-hoc signed, so rebuilding it (`scripts/build-app.sh`) can make macOS ask for permissions again. If a permission seems stuck, remove MeetingNotes from the list in System Settings and add it again. Signing with a stable identity (`CODESIGN_IDENTITY="My Cert" scripts/build-app.sh`) avoids this.
+- **Permissions survive rebuilds:** macOS ties Microphone and Screen & System Audio permissions to the code signature. `scripts/build-app.sh` signs with a fixed local certificate ("MeetingNotes Local Signing", created once by `scripts/setup-signing.sh` in its own keychain `~/Library/Keychains/meetingnotes-signing.keychain-db`, password in `~/.config/meeting-notes/signing-keychain.pass`), so the designated requirement (`identifier "com.hoangphu.meetingnotes" and certificate leaf = H"…"`) stays the same across rebuilds. Versions before this one were ad-hoc signed, so **grant the permissions once more after updating**. If a permission seems stuck, remove MeetingNotes from the list in System Settings and add it again. `CODESIGN_IDENTITY=-` forces ad-hoc signing (permissions then reset on every rebuild).
 - **Monthly prompt:** macOS 15 periodically asks you to re-confirm screen/audio recording access, and shows a purple indicator while recording.
+
+## Controls (no menu bar needed)
+
+On a MacBook with a notch and a crowded menu bar, macOS hides menu bar items that don't fit behind the notch, with no warning. The app therefore never depends on its menu bar icon:
+- **Floating pill** at the bottom center, just above the Dock, on every Space including full-screen apps. Hover it to expand. Clicking the pill only expands it; only the explicit buttons start, stop or discard. Drag it to move it (menu › Reset pill position).
+- **Dock icon** (Settings › Show in Dock, default on). Right-click it for Start / Pause / Stop & create notes / Show controls / Open last notes. Opening the app again (Finder, Spotlight, `open -a MeetingNotes`) brings the pill to the front.
+- **Hotkeys:** **⌃⌥⌘R** start/stop, **⌃⌥⌘P** pause/resume, each with a short on-screen toast.
+- **URL scheme / CLI:** `open meetingnotes://stop` (also start, pause, resume, toggle, show), or `uv run --project ~/meeting-notes/pipeline meeting-notes ctl stop|start|pause|resume|toggle|show|status`.
+- **Menu bar icon:** icon only, to take as little space as possible.
 
 ## Use
 
 | Action | How |
 |---|---|
-| Start / stop recording | Menu bar › Start Recording / Stop Recording, or **⌃⌥⌘R** anywhere |
-| Recording state | Red dot + elapsed time next to the icon |
-| Meeting detection | When Zoom, Teams, Webex, Slack, FaceTime, Discord or a browser (Meet) starts using the mic, you get a notification "Meeting detected — start recording?" with a **Start recording** button. Also shown in the menu. Toggle: Settings › Detect Meetings (needs macOS 14.2+). |
-| Processing | Starts automatically after Stop. The menu shows the stage and percent; you get a "Notes ready" notification when it finishes. |
-| Recent meetings | The last 8 meetings in the menu, each with Open Notes / Show in Finder / Reprocess / Show Pipeline Log |
-| Errors | Shown at the top of the menu (Clear Error) and as a notification |
+| Start / stop recording | Pill (hover) › Start / Stop & create notes, Dock icon menu, menu bar icon, or **⌃⌥⌘R** anywhere. Start is ignored while a recording runs ("Already recording"). |
+| Pause / resume | Pill › Pause / Resume or **⌃⌥⌘P**. Both captures stop (mic indicator off); paused time is not in the audio. |
+| Discard | Pill › Discard (asks first; deletes that recording's folder) |
+| Recording state | Pill: red dot + timer + level bars; hover for Me/Them meters and the meeting title |
+| Meeting detection | When Zoom, Teams, Webex, Slack, FaceTime, Discord or a browser (Meet) starts using the mic, a card at the top right asks "Start notes?" (Start / Not now / Snooze 1 h). Never records by itself. Needs macOS 14.2+. |
+| Auto-stop | After N minutes of silence (Settings, default 15) or when the meeting app releases the mic, a card offers to stop in 60 s (Stop now / Keep recording). |
+| Processing | Starts after Stop (Settings › Create notes: right away / when idle and plugged in / manually). The pill shows each stage, percent and time left; "Open transcript" as soon as the transcript exists. |
+| Notes | Built-in viewer (summary, decisions, action items, searchable transcript) or `notes.md` in your editor |
+| Recent meetings | Menu bar icon › Recent meetings (Open notes / Show in Finder / Retry / Create notes / Show pipeline log) |
+| Errors | In the pill, with one action (Retry or Open System Settings); audio is always kept |
+| Scripting | `open meetingnotes://start` (stop, pause, resume, toggle, show) or `meeting-notes ctl …`; state in `~/Library/Application Support/MeetingNotes/state.json` |
 
 Change the hotkey (then relaunch the app):
 
 ```sh
 defaults write com.hoangphu.meetingnotes hotkey "cmd+shift+f5"   # modifiers: ctrl opt shift cmd; keys a-z 0-9 f1-f12 space
+defaults write com.hoangphu.meetingnotes pauseHotkey "ctrl+opt+cmd+p"
 ```
 
 ### Where notes go
@@ -105,7 +120,7 @@ The stages are `prepare → diarize → transcribe → summarize → render → 
   - **No headphones:** if the mic hears your speakers, mic activity during remote speech is treated as echo and dropped.
   - **In-person meetings:** several distinct voices on the mic get their own labels (`mic_speakers = "me"` turns this off).
 - **Transcription:** whisper large-v3-turbo runs per speaker block. The language is detected per block and per turn, restricted to `languages` (default `["vi", "en"]`), so mixed Vietnamese/English meetings are transcribed in the right language turn by turn. Typical Whisper hallucinations on silence ("Hẹn gặp lại các bạn trong những video tiếp theo", "Thanks for watching") are filtered out.
-- **Summary:** Ollama `qwen3:8b` (thinking disabled, JSON-schema output, temperature 0.2) produces the summary, decisions, action items and open questions in the main language. Long meetings are summarized in parts and then merged.
+- **Summary:** Ollama `qwen3:4b` by default (thinking disabled, JSON-schema output, temperature 0.2) produces the summary, decisions, action items and open questions in the main language. Long meetings are summarized in parts and then merged.
 
 ## Change models
 
@@ -119,11 +134,35 @@ initial_prompt = "Momos, OKR, Kubernetes"               # vocabulary hint for na
 ```
 
 Model notes:
-- This Mac has 16 GB RAM, so 7–8B models are the sweet spot.
-- `qwen3:14b` (~9 GB) gives better summaries but is slower and tight on memory while other apps are open.
+- **Summary model:** pick it in the app (Settings › Summary model: Light `qwen3:4b` ~3.6 GB loaded / Better `qwen3:8b` ~6.3 GB loaded), or set `ollama_model`.
+  - The default is 4b because on this 16 GB Mac (Cursor, Chrome and a VM open) 8b pushed free memory down to 9% and grew swap by about 6.5 GB, which made the Mac lag. 4b kept free memory at 23% or more.
+  - With the deadline-preserving prompt, 4b got the action items right on the test meeting. Use 8b when the Mac is otherwise idle.
+- `qwen3:14b` (~9 GB) is not recommended on 16 GB.
 - After changing the summary model, re-run `process <folder> --from summarize` on old meetings if you want.
 
 Environment overrides: `MEETING_NOTES_OLLAMA_MODEL`, `MEETING_NOTES_WHISPER_MODEL`, `MEETING_NOTES_DIR`, `MEETING_NOTES_CONFIG`.
+
+## Performance
+
+The app is built to stay out of the way while you work:
+- **Idle:** about 0% CPU and a few tens of MB of RAM. Nothing is loaded at launch, meeting detection is event-driven (CoreAudio listeners), and no animations run while idle.
+- **Recording:** capture only, no processing during the meeting. Level meters update only while the pill is visible on screen.
+- **Processing** runs after Stop, one meeting at a time:
+  - **Priority:** nice 10 + utility QoS, with torch/BLAS threads capped at 4.
+  - **Models:** whisper and pyannote are unloaded after their stage, and the worker process exits after 1 idle minute.
+  - **Ollama:** `keep_alive` is 1 minute and the summary model is not preloaded.
+  - **Settings › Create notes:** right away (low priority) / when idle and plugged in (full speed) / manually.
+  - **Config:** `priority = "background"` (macOS background QoS) is gentler still but measured ~3x slower, with 5–8x slower model loading.
+- **Measured** on a 48 s synthetic two-track meeting, with the Mac otherwise busy:
+
+| | Before (8b, normal priority, preload) | After (defaults) |
+|---|---|---|
+| Wall time | 59 s | 44–65 s (transcript ready at ~33–39 s) |
+| Pipeline RAM (peak) | 1.6 GB | 0.75–1.1 GB |
+| Ollama model loaded | 6.3 GB | 3.6 GB |
+| Lowest free memory (`memory_pressure`) | 9% | 23–25% |
+
+- **Timings:** each run records per-stage timings in `status.json` (`timings`) and in the last `pipeline.log` event, and learns per-stage speed for the ETA (`~/.cache/meeting-notes/timings.json`).
 
 ## Troubleshooting
 
@@ -133,7 +172,10 @@ Environment overrides: `MEETING_NOTES_OLLAMA_MODEL`, `MEETING_NOTES_WHISPER_MODE
 | Mic track silent | System Settings › Privacy & Security › Microphone › MeetingNotes; check the input device in Sound settings |
 | Hotkey does nothing | Another app owns ⌃⌥⌘R; set another with `defaults write ... hotkey` and relaunch |
 | "Ollama is not reachable" | `brew services start ollama`; then menu › Reprocess |
-| Summary missing / poor | `ollama list` should show `qwen3:8b`; re-run `meeting-notes process <folder> --from summarize` |
+| Summary missing / poor | `ollama list` should show the model (`qwen3:4b`); try Settings › Summary model › Better; re-run `meeting-notes process <folder> --from summarize` |
+| Can't find the app's controls | The menu bar icon may be hidden by the notch: use the pill above the Dock, the Dock icon menu, ⌃⌥⌘R, or `open meetingnotes://show` |
+| Mac feels slow while notes are created | Settings › Create notes › When idle and plugged in (or Manually); keep Summary model on Light |
+| Permissions asked again after an update | Expected once after switching from ad-hoc to the stable local certificate; afterwards rebuilds keep them |
 | Everyone is "Speaker 1" / voices merged | Accept the pyannote terms (see above), or lower `cluster_threshold` (e.g. 0.5); then `--from diarize` |
 | Too many speakers | Raise `cluster_threshold` (e.g. 0.7) |
 | Wrong language on short phrases | Set `languages` to the languages actually spoken; add `initial_prompt` |
@@ -156,12 +198,12 @@ cd pipeline
 uv run pytest                                       # unit tests (fast, no models)
 MEETING_NOTES_E2E=1 uv run pytest tests/test_e2e.py # end-to-end: synthetic Vietnamese/English meeting via `say` + real models + Ollama
 uv run python tests/e2e/make_synthetic.py /tmp/x    # just generate the synthetic meeting
-cd ../app && swift build                            # app debug build
-~/Applications/MeetingNotes.app/Contents/MacOS/MeetingNotes --self-test-record 5 /tmp/mn-test   # headless recording test
+cd ../app && swift build && swift test             # app debug build + unit tests (MeetingNotesCore)
+~/Applications/MeetingNotes.app/Contents/MacOS/MeetingNotes --self-test-record 20 /tmp/mn-test --pause-at 6 --pause-for 5   # headless recording test
 ```
 
 App ↔ pipeline contract:
-- The app runs `uv run --project pipeline meeting-notes process <folder> --json`.
-- stdout carries JSON lines: `stage`, `progress` (`fraction`, `overall`), `warning`, `error` and `done` (`folder`, `notes`, `title`).
-- The exit code is 0 on success.
+- The app spawns `uv run --project pipeline meeting-notes worker` on demand (never at launch or while recording) and sends JSON-line jobs on stdin (`{"cmd":"process","job":…,"folder":…}`, `cancel`, `quit`); the worker exits after about a minute idle.
+- stdout carries JSON lines tagged with the job: `stage`, `progress` (`fraction`, `overall`, `eta_sec`), `warning`, `error`, `partial`, `cancelled`, `done` (`folder`, `notes`, `title`), then `job_end` (`exit` 0 ok, 1 failed, 2 bad request, 3 cancelled).
+- `meeting.json` carries `pauses` (`at_sec` in recorded time, `duration_sec` wall), `duration_sec` (recorded) and `wall_duration_sec`.
 - The pipeline writes `status.json` (`state`: running | done | failed).
