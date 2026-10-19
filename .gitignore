@@ -1,0 +1,11 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.build/
+build/
+dist/
+*.app
+.pytest_cache/
+.DS_Store
+tests/fixtures/out/
