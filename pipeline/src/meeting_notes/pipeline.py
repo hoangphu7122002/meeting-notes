@@ -23,7 +23,8 @@ import numpy as np
 
 from . import audio as A
 from .config import Config, redact
-from .events import STAGES, Reporter
+from .events import STAGES, Cancelled, Reporter
+from .models import Models, preload_ollama
 from .speakers import Turn, build_blocks, resolve_single_track, resolve_two_tracks, speaker_order
 
 AUDIO_EXTS = {".wav", ".m4a", ".mp3", ".aac", ".flac", ".ogg", ".opus", ".caf", ".aiff", ".mp4", ".mov", ".webm"}
@@ -113,10 +114,11 @@ class MeetingFolder:
 
 
 class Processor:
-    def __init__(self, folder: Path, cfg: Config, reporter: Reporter):
+    def __init__(self, folder: Path, cfg: Config, reporter: Reporter, models: Models | None = None):
         self.m = MeetingFolder(folder)
         self.cfg = cfg
         self.r = reporter
+        self.models = models or Models(cfg, keep=False, log=reporter.log)
         self.r.log_file = self.m.file("pipeline.log")
         self.warnings: list[str] = []
         self.forced: set[str] = set()
@@ -130,20 +132,51 @@ class Processor:
         self.m.work.mkdir(exist_ok=True)
         self.forced = set(STAGES[STAGES.index(from_stage):]) if from_stage else set()
         self._status("running")
+        self.r.audio_sec = self._audio_duration()
+        if self.cfg.ollama_preload and self._will_summarize():
+            preload_ollama(self.cfg)  # loads in parallel with diarization/transcription
         stage = None
         try:
             for stage in STAGES:
                 getattr(self, f"stage_{stage}")(stage in self.forced)
-            self._status("done")
+                if stage == "transcribe" and self._will_summarize():
+                    self._render_partial()
+            self._status("done", timings=self.r.timings)
             transcript = read_json(self.m.file("transcript.json")) or {}
             self.r.done(self.m.path, self.m.file("notes.md"), transcript.get("title") or self.m.meeting.get("title", ""))
             return self.m.path
+        except Cancelled:
+            self.r.log("cancelled")
+            self._status("cancelled", stage=stage)
+            self.r.cancelled(self.m.path)
+            raise
         except Exception as exc:
             message = redact(f"{exc}")
             self.r.log(redact(traceback.format_exc()))
             self.r.error(message)
             self._status("failed", error=message, stage=stage)
             raise
+
+    def _audio_duration(self) -> float | None:
+        for source in (self.m.work / "prepare.json", self.m.file("transcript.json")):
+            value = (read_json(source) or {}).get("duration_sec")
+            if value:
+                return float(value)
+        value = self.m.meeting.get("duration_sec") if self.m.file("meeting.json").exists() else None
+        return float(value) if value else None
+
+    def _will_summarize(self) -> bool:
+        return "summarize" in self.forced or not (self.m.work / "summary.json").exists()
+
+    def _render_partial(self) -> None:
+        """Write notes.md with the transcript right away; the summary follows."""
+        from .render import render_notes
+
+        transcript = read_json(self.m.file("transcript.json")) or {}
+        if not transcript.get("segments"):
+            return
+        self.m.file("notes.md").write_text(render_notes(self.m.meeting, transcript, None, pending=True), encoding="utf-8")
+        self.r.partial(self.m.path, self.m.file("notes.md"))
 
     def _status(self, state: str, **extra) -> None:
         data = {"state": state, "pid": os.getpid(), "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -199,6 +232,7 @@ class Processor:
             if path != self.m.file("mixed.m4a") and (force or not self.m.file("mixed.m4a").exists()):
                 A.encode_m4a([(path, offset)], self.m.file("mixed.m4a"))
         write_json(marker, {"tracks": names, "duration_sec": round(length / A.SR, 2)})
+        self.r.audio_sec = length / A.SR
         self.r.stage_end("prepare", message=f"{len(names)} track(s), {length / A.SR / 60:.1f} min")
 
     def _audio(self) -> dict[str, np.ndarray]:
@@ -209,10 +243,8 @@ class Processor:
         out = self.m.work / "diarization.json"
         if self._skip("diarize", out, force):
             return
-        from .diarize import Diarizer
-
         tracks = self._audio()
-        diarizer = Diarizer(self.cfg, log=self.r.log)
+        diarizer = self.models.diarizer()
         notes: list[str] = []
         methods: list[str] = []
         try:
@@ -240,7 +272,7 @@ class Processor:
                     turns = resolve_single_track(d.turns, name, single)
                 methods, notes = [f"{name}={d.method}"], d.notes
         finally:
-            diarizer.release()
+            self.models.done_with_diarizer()
         note = describe_diarization(methods, notes)
         if any("pyannote unavailable" in n for n in notes):
             self._warn("pyannote diarization unavailable (accept the model terms on Hugging Face, see README); used fallback")
@@ -251,18 +283,18 @@ class Processor:
         out = self.m.file("transcript.json")
         if self._skip("transcribe", out, force):
             return
-        from .transcribe import Transcriber, language_stats, split_long_blocks, transcribe_blocks
+        from .transcribe import language_stats, split_long_blocks, transcribe_blocks
 
         diar = read_json(self.m.work / "diarization.json") or {}
         turns = [Turn(**t) for t in diar.get("turns", [])]
         tracks = self._audio()
         blocks = split_long_blocks(build_blocks(turns), tracks)
         self.r.progress(0.0, f"Loading {self.cfg.whisper_model.split('/')[-1]}")
-        transcriber = Transcriber(self.cfg)
+        transcriber = self.models.transcriber()
         try:
             segments = transcribe_blocks(blocks, tracks, transcriber, self.cfg.languages, lambda f, msg: self.r.progress(f, msg))
         finally:
-            transcriber.release()
+            self.models.done_with_transcriber()
         stats = language_stats(segments)
         language = next(iter(stats), (self.cfg.languages or ["en"])[0])
         meeting = self.m.meeting
@@ -278,6 +310,7 @@ class Processor:
             "speakers": [s for s in speaker_order(turns, self.cfg.me_name) if s in spoken],
             "diarization": {"methods": diar.get("methods", []), "note": diar.get("note", "")},
             "whisper_model": self.cfg.whisper_model,
+            "pauses": meeting.get("pauses") or [],
             "segments": [s.to_dict() for s in segments],
         }
         write_json(out, transcript)
@@ -299,6 +332,8 @@ class Processor:
             return
         try:
             notes = summarize(lines, transcript.get("language", "en"), self.cfg, lambda f, msg: self.r.progress(f, msg))
+        except Cancelled:
+            raise
         except Exception as exc:
             self._warn(f"Summary failed: {redact(str(exc))}")
             write_json(self.m.work / "summary.error.json", {"error": redact(str(exc))})
@@ -343,10 +378,14 @@ class Processor:
             (self.m.work / "prepare.json").unlink(missing_ok=True)
         # Rename the folder after the meeting title.
         summary = read_json(self.m.work / "summary.json") or {}
-        title = summary.get("title")
-        if self.cfg.rename_folder and title and meeting.get("title_source", "default") in DEFAULT_TITLES:
-            meeting["title"], meeting["title_source"] = title, "llm"
-            write_json(self.m.file("meeting.json"), meeting)
+        if meeting.get("title_source", "default") in DEFAULT_TITLES:
+            title = summary.get("title")
+            if title:
+                meeting["title"], meeting["title_source"] = title, "llm"
+                write_json(self.m.file("meeting.json"), meeting)
+        else:
+            title = meeting.get("title")  # set by the user
+        if self.cfg.rename_folder and title:
             name = folder_name(self.m.path.name, meeting.get("started_at"), title)
             if not re.fullmatch(re.escape(name) + r"( \d+)?", self.m.path.name):
                 new_path = unique_path(self.m.path.parent, name)

@@ -23,7 +23,7 @@ def test_chunk_lines():
 def test_summarize_map_reduce(monkeypatch):
     calls = []
 
-    def fake_chat(self, system, user):
+    def fake_chat(self, system, user, tick=None):
         calls.append(user)
         assert "Vietnamese" in system
         return {"title": "T", "summary": [user[:10]], "decisions": [], "action_items": [], "open_questions": []}

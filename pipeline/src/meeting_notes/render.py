@@ -12,12 +12,14 @@ HEADINGS = {
         "summary": "Summary", "decisions": "Key decisions", "actions": "Action items",
         "questions": "Open questions", "transcript": "Transcript", "none": "None.", "due": "due",
         "no_summary": "Summary unavailable", "diarization": "Speaker labels",
+        "pending": "Summary in progress…", "paused": "recording paused",
     },
     "vi": {
         "date": "Ngày", "duration": "Thời lượng", "speakers": "Người nói", "language": "Ngôn ngữ",
         "summary": "Tóm tắt", "decisions": "Quyết định chính", "actions": "Việc cần làm",
         "questions": "Câu hỏi mở", "transcript": "Bản ghi", "none": "Không có.", "due": "hạn",
         "no_summary": "Chưa có tóm tắt", "diarization": "Nhãn người nói",
+        "pending": "Đang tạo tóm tắt…", "paused": "tạm dừng ghi âm",
     },
 }
 
@@ -40,10 +42,14 @@ def paragraphs(segments: list[dict], max_gap: float = 2.5, max_len: float = 90.0
     return out
 
 
-def render_notes(meeting: dict, transcript: dict, summary: dict | None, summary_error: str | None = None) -> str:
+def render_notes(meeting: dict, transcript: dict, summary: dict | None, summary_error: str | None = None,
+                 pending: bool = False) -> str:
     lang = transcript.get("language") or "en"
     h = HEADINGS.get(lang, HEADINGS["en"])
-    title = (summary or {}).get("title") or meeting.get("title") or "Meeting"
+    if meeting.get("title_source") == "user":
+        title = meeting.get("title") or "Meeting"
+    else:
+        title = (summary or {}).get("title") or meeting.get("title") or "Meeting"
     lines = [f"# {title}", ""]
 
     meta = []
@@ -80,6 +86,8 @@ def render_notes(meeting: dict, transcript: dict, summary: dict | None, summary_
         lines += ["", f"## {h['questions']}", ""]
         lines += [f"- {q}" for q in summary["open_questions"]] or [h["none"]]
         lines.append("")
+    elif pending:
+        lines += [f"> _{h['pending']}_", ""]
     else:
         lines += [f"> **{h['no_summary']}:** {summary_error or 'not generated'}", ""]
 
@@ -87,9 +95,18 @@ def render_notes(meeting: dict, transcript: dict, summary: dict | None, summary_
     diar = transcript.get("diarization", {})
     if diar.get("note"):
         lines += [f"_{h['diarization']}: {diar['note']}_", ""]
+    pauses = sorted(transcript.get("pauses") or [], key=lambda x: x.get("at_sec", 0))
     for p in paragraphs(transcript.get("segments", [])):
+        while pauses and pauses[0].get("at_sec", 0) <= p["start"]:
+            lines += [pause_line(pauses.pop(0), h), ""]
         lines += [f"**[{timestamp(p['start'])}] {p['speaker']}:** {p['text']}", ""]
+    lines += [line for x in pauses for line in (pause_line(x, h), "")]
     return "\n".join(lines).rstrip() + "\n"
+
+
+def pause_line(pause: dict, h: dict) -> str:
+    minutes = max(1, round(float(pause.get("duration_sec", 0)) / 60))
+    return f"_[{timestamp(pause.get('at_sec', 0))}] — {h['paused']} ({minutes} min) —_"
 
 
 def transcript_lines(segments: list[dict]) -> list[str]:

@@ -37,10 +37,23 @@ class Config:
     mic_speakers: str = "auto"
     # Summary (Ollama, local).
     ollama_url: str = "http://127.0.0.1:11434"
-    ollama_model: str = "qwen3:8b"
-    ollama_num_ctx: int = 16384
+    ollama_model: str = "qwen3:4b"  # qwen3:8b: better summaries, ~2x RAM (see README)
+    ollama_num_ctx: int = 12288
+    ollama_keep_alive: str = "1m"  # unload soon after the summary to give RAM back
+    ollama_num_thread: int = 4
     ollama_timeout_sec: int = 900
-    summary_chunk_chars: int = 24000
+    summary_chunk_chars: int = 18000
+    ollama_preload: bool = False  # True: load the summary model while transcribing (faster, more RAM at once)
+    # Resource limits so processing never makes the Mac feel slow.
+    # "low": nice 10 + utility QoS (default) | "background": macOS background QoS, gentlest but ~3x slower
+    # | "normal": full speed.
+    priority: str = "low"
+    cpu_threads: int = 4  # torch / BLAS / OpenMP threads
+    diarization_batch_size: int = 8  # pyannote batch size: smaller = shorter GPU bursts
+    # Worker (used by the app). keep_models_warm=False unloads whisper/pyannote right after each stage
+    # (lowest RAM); True keeps them between meetings until worker_idle_release_min.
+    keep_models_warm: bool = False
+    worker_idle_release_min: float = 1.0
     # Housekeeping.
     keep_wav: bool = False
     rename_folder: bool = True

@@ -45,8 +45,9 @@ Rules:
 - title: 3-8 words naming the meeting topic, no date, no quotes.
 - summary: 3-8 bullet points with the main points discussed, most important first.
 - decisions: things the participants agreed or decided. Empty list if none.
-- action_items: concrete tasks someone committed to or was asked to do. owner = the person's name if mentioned, otherwise the speaker label (e.g. "Me", "Speaker 2"); null if unclear. due = the deadline exactly as mentioned (e.g. "Friday", "next week"), null if none.
+- action_items: concrete tasks someone committed to or was asked to do. owner = the person's name if mentioned, otherwise the speaker label (e.g. "Me", "Speaker 2"); null if unclear. due = the deadline exactly as said in the transcript, kept in the transcript's own words (e.g. "next Monday", "thứ sáu tuần này"); never compute or change a date; null if none.
 - open_questions: unresolved questions or topics needing follow-up. Empty list if none.
+- Double-check every name, number, date and deadline against the transcript before answering.
 - The transcript comes from automatic speech recognition and may contain errors; interpret charitably.
 Answer with JSON only."""
 
@@ -98,21 +99,33 @@ class Ollama:
                 if progress and info.get("total"):
                     progress(info.get("completed", 0) / info["total"], f"Downloading {name}")
 
-    def chat(self, system: str, user: str) -> dict:
+    def chat(self, system: str, user: str, tick: Callable[[int], None] | None = None) -> dict:
+        """One structured completion. Streams so `tick(tokens_so_far)` can report progress / cancel."""
         payload = {
             "model": self.cfg.ollama_model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             "format": SCHEMA,
-            "stream": False,
+            "stream": True,
             "think": False,
-            "keep_alive": "2m",
+            "keep_alive": self.cfg.ollama_keep_alive,
             "options": {"temperature": 0.2, "num_ctx": self.cfg.ollama_num_ctx},
         }
+        if self.cfg.ollama_num_thread > 0:
+            payload["options"]["num_thread"] = self.cfg.ollama_num_thread
+        parts: list[str] = []
         with self._request("/api/chat", payload, timeout=self.cfg.ollama_timeout_sec) as resp:
-            body = json.load(resp)
-        if body.get("error"):
-            raise OllamaError(body["error"])
-        return parse_json(body.get("message", {}).get("content", ""))
+            for n, line in enumerate(resp, 1):
+                if not line.strip():
+                    continue
+                chunk = json.loads(line)
+                if chunk.get("error"):
+                    raise OllamaError(chunk["error"])
+                parts.append(chunk.get("message", {}).get("content", ""))
+                if tick and n % 8 == 0:
+                    tick(n)
+                if chunk.get("done"):
+                    break
+        return parse_json("".join(parts))
 
 
 def parse_json(content: str) -> dict:
@@ -173,19 +186,29 @@ def summarize(
 ) -> dict:
     client = Ollama(cfg)
     client.ensure_model(progress)
+    expected_tokens = 700.0
+
+    def ticker(lo: float, hi: float, message: str):
+        if progress is None:
+            return None
+        return lambda n: progress(lo + (hi - lo) * min(0.95, n / expected_tokens), message)
+
     system = SYSTEM.format(language=LANGUAGE_NAMES.get(language, language))
     if not transcript_lines:
         return normalize_notes({"title": "", "summary": [], "decisions": [], "action_items": [], "open_questions": []})
     chunks = chunk_lines(transcript_lines, cfg.summary_chunk_chars)
     if len(chunks) == 1:
+        message = f"Summarizing with {cfg.ollama_model}"
         if progress:
-            progress(0.1, f"Summarizing with {cfg.ollama_model}")
-        return client.chat(system, SINGLE_USER.format(transcript=chunks[0]))
+            progress(0.05, message)
+        return client.chat(system, SINGLE_USER.format(transcript=chunks[0]), ticker(0.05, 1.0, message))
     partials = []
     for i, chunk in enumerate(chunks, 1):
         if progress:
             progress((i - 1) / (len(chunks) + 1), f"Summarizing part {i}/{len(chunks)}")
-        partials.append(client.chat(system, MAP_USER.format(part=i, parts=len(chunks), transcript=chunk)))
+        n = len(chunks) + 1
+        partials.append(client.chat(system, MAP_USER.format(part=i, parts=len(chunks), transcript=chunk),
+                                    ticker((i - 1) / n, i / n, f"Summarizing part {i}/{len(chunks)}")))
     if progress:
         progress(len(chunks) / (len(chunks) + 1), "Merging partial summaries")
     merged = json.dumps(partials, ensure_ascii=False)
@@ -196,4 +219,5 @@ def summarize(
                 for i in range(0, len(partials), 2)
             ]
         merged = json.dumps(partials, ensure_ascii=False)
-    return client.chat(system, REDUCE_USER.format(notes=merged))
+    n = len(chunks) + 1
+    return client.chat(system, REDUCE_USER.format(notes=merged), ticker((n - 1) / n, 1.0, "Merging partial summaries"))

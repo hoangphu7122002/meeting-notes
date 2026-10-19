@@ -74,6 +74,7 @@ def stubs(monkeypatch):
     monkeypatch.setattr(T, "Transcriber", FakeTranscriber)
     monkeypatch.setattr(T, "transcribe_blocks", fake_transcribe_blocks)
     monkeypatch.setattr(S, "summarize", fake_summarize)
+    monkeypatch.setattr(P, "preload_ollama", lambda cfg: None)
     return calls
 
 
@@ -149,3 +150,49 @@ def test_mic_only_meeting_is_me(tmp_path, stubs):
     transcript = json.loads((final / "transcript.json").read_text())
     assert {s["speaker"] for s in transcript["segments"]} == {"Me"}
     assert abs(transcript["segments"][0]["start"] - 1.2) < 0.2
+
+
+def test_pauses_are_rendered_and_timestamps_follow_recorded_time(meeting, stubs):
+    meta = json.loads((meeting / "meeting.json").read_text())
+    # The app drops audio while paused, so files hold recorded time only; pauses are metadata.
+    meta["pauses"] = [{"at_sec": 1.5, "duration_sec": 125.0, "started_at": "2026-10-19T14:30:01+07:00"}]
+    (meeting / "meeting.json").write_text(json.dumps(meta))
+    final = P.Processor(meeting, Config(), Reporter()).run()
+    transcript = json.loads((final / "transcript.json").read_text())
+    assert transcript["pauses"][0]["at_sec"] == 1.5
+    assert transcript["duration_sec"] < 10  # paused wall time is not part of the timeline
+    notes = (final / "notes.md").read_text()
+    marker = notes.index("tạm dừng ghi âm (2 min)")
+    assert notes.index("] Others:**") < marker < notes.index("] Me:**")
+
+
+def test_user_title_renames_folder_and_is_kept(meeting, stubs):
+    meta = json.loads((meeting / "meeting.json").read_text())
+    meta.update(title="Weekly sync", title_source="user")
+    (meeting / "meeting.json").write_text(json.dumps(meta))
+    final = P.Processor(meeting, Config(), Reporter()).run()
+    assert final.name == "2026-10-19 1430 Weekly sync"
+    assert (final / "notes.md").read_text().startswith("# Weekly sync")
+
+
+def test_partial_notes_event_before_summary(meeting, stubs, capsys):
+    P.Processor(meeting, Config(), Reporter(json_mode=True)).run()
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    kinds = [(e["event"], e.get("stage"), e.get("status")) for e in events]
+    partial = kinds.index(("partial", None, None))
+    assert kinds.index(("stage", "transcribe", "done")) < partial < kinds.index(("stage", "summarize", "start"))
+    done = events[-1]
+    assert set(done["timings"]) >= {"diarize", "transcribe", "summarize"}
+    assert all("eta_sec" in e for e in events if e["event"] == "progress")
+
+
+def test_cancel_marks_status(meeting, stubs):
+    import threading
+
+    from meeting_notes.events import Cancelled
+
+    cancel = threading.Event()
+    cancel.set()
+    with pytest.raises(Cancelled):
+        P.Processor(meeting, Config(), Reporter(cancel=cancel)).run()
+    assert json.loads((meeting / "status.json").read_text())["state"] == "cancelled"

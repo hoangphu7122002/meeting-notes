@@ -18,6 +18,7 @@ from .events import STAGES, Reporter  # noqa: E402
 
 
 def cmd_process(args, cfg: Config) -> int:
+    from .events import Cancelled
     from .pipeline import Processor
 
     folder = Path(args.folder).expanduser()
@@ -27,9 +28,37 @@ def cmd_process(args, cfg: Config) -> int:
     reporter = Reporter(json_mode=args.json)
     try:
         Processor(folder, cfg, reporter).run("prepare" if args.force else args.from_stage)
+    except Cancelled:
+        return 3
     except Exception:
         return 1
     return 0
+
+
+def cmd_worker(args, cfg: Config) -> int:
+    from .worker import Worker
+
+    return Worker().serve()
+
+
+APP_STATE = Path("~/Library/Application Support/MeetingNotes/state.json").expanduser()
+CTL_COMMANDS = ["start", "stop", "pause", "resume", "toggle", "show", "status"]
+
+
+def cmd_ctl(args, cfg: Config) -> int:
+    """Control the running app without the menu bar (URL scheme meetingnotes://<command>)."""
+    import subprocess
+
+    if args.action == "status":
+        try:
+            state = json.loads(APP_STATE.read_text())
+        except (OSError, ValueError):
+            print("MeetingNotes app state unknown (app not running?)")
+            return 1
+        print(json.dumps(state, ensure_ascii=False, indent=2))
+        return 0
+    flags = [] if args.action in ("show", "start") else ["-g"]
+    return subprocess.run(["open", *flags, f"meetingnotes://{args.action}"], check=False).returncode
 
 
 def cmd_import(args, cfg: Config) -> int:
@@ -149,8 +178,21 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("setup", help="download whisper, embedding and Ollama models")
     p.set_defaults(func=cmd_setup)
 
+    p = sub.add_parser("worker", help="long-lived worker for the app (JSON commands on stdin)")
+    p.set_defaults(func=cmd_worker)
+
+    p = sub.add_parser("ctl", help="control the MeetingNotes app: " + "|".join(CTL_COMMANDS))
+    p.add_argument("action", choices=CTL_COMMANDS)
+    p.set_defaults(func=cmd_ctl)
+
     args = parser.parse_args(argv)
-    return args.func(args, Config.load())
+    cfg = Config.load()
+    if args.command in ("process", "import", "worker"):
+        from .resources import apply_priority, limit_threads
+
+        limit_threads(cfg.cpu_threads)
+        apply_priority(os.environ.get("MEETING_NOTES_PRIORITY") or cfg.priority)
+    return args.func(args, cfg)
 
 
 if __name__ == "__main__":

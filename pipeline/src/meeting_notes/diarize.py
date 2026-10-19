@@ -28,6 +28,10 @@ class TrackDiarization:
 def _device(pref: str):
     import torch
 
+    from .resources import apply_torch_threads
+
+    apply_torch_threads(int(os.environ.get("OMP_NUM_THREADS", "4")))
+
     if pref == "cpu":
         return torch.device("cpu")
     if pref in ("mps", "auto") and torch.backends.mps.is_available():
@@ -68,6 +72,9 @@ class Diarizer:
                     if pipe is None:
                         errors.append(f"{name}: not available")
                         continue
+                    for attr in ("embedding_batch_size", "segmentation_batch_size"):
+                        if hasattr(pipe, attr):
+                            setattr(pipe, attr, self.cfg.diarization_batch_size)
                     try:
                         pipe.to(_device(self.cfg.diarization_device))
                     except Exception as exc:
