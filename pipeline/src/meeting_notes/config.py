@@ -32,6 +32,7 @@ class Config:
     whisper_temperature_fallback: bool = True
     whisper_condition_on_previous_text: bool = False  # True feeds earlier text back in: more repeat loops
     whisper_max_chunk_sec: float = 28.0  # whisper only applies the prompt to the first 30 s window of a call
+    mlx_cache_limit_mb: int = 256  # cap on MLX's freed-buffer cache during transcription; -1 = MLX default (unbounded)
     # Diarization. Gated pyannote pipelines are tried in order; the fallback clusters speaker
     # embeddings from an ungated model, or labels tracks "Me" / "Others" if that also fails.
     diarization_models: list[str] = field(

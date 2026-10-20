@@ -150,7 +150,7 @@ The app is built to stay out of the way while you work:
 - **Recording:** capture only, no processing during the meeting. Level meters update only while the pill is visible on screen.
 - **Processing** runs after Stop, one meeting at a time:
   - **Priority:** nice 10 + utility QoS, with torch/BLAS threads capped at 4.
-  - **Models:** whisper and pyannote are unloaded after their stage, and the worker process exits after 1 idle minute.
+  - **Models:** whisper and pyannote are unloaded after their stage, and the worker process exits after 1 idle minute. MLX's Metal buffer cache is capped at 256 MB while transcribing (`mlx_cache_limit_mb`); uncapped, GPU memory grew to ~4 GB (model ~1.5 GB) on a 1-hour meeting.
   - **Ollama:** `keep_alive` is 1 minute and the summary model is not preloaded.
   - **Settings › Create notes:** right away (low priority) / when idle and plugged in (full speed) / manually.
   - **Config:** `priority = "background"` (macOS background QoS) is gentler still but measured ~3x slower, with 5–8x slower model loading.

@@ -233,6 +233,10 @@ class Transcriber:
             import mlx.core as mx
             from mlx_whisper.transcribe import ModelHolder
 
+            if self.cfg.mlx_cache_limit_mb >= 0:
+                # MLX keeps freed Metal buffers in a cache that grows with every new block shape
+                # (~2.5 GB extra on a 1 h meeting); capping it keeps the footprint near the model size.
+                mx.set_cache_limit(int(self.cfg.mlx_cache_limit_mb) * 2**20)
             self._model = ModelHolder.get_model(self.cfg.whisper_model, mx.float16)
         return self._model
 

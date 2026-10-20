@@ -23,6 +23,7 @@ vad_split_gap = 2.0
 whisper_temperature_fallback = true        # re-decode degenerate windows at higher temperature
 whisper_condition_on_previous_text = false # true feeds earlier text back in: more repeat loops
 whisper_max_chunk_sec = 28.0               # whisper applies the prompt only to the first 30 s of each call
+mlx_cache_limit_mb = 256                   # MLX buffer cache cap while transcribing (-1 = unbounded, ~2.5 GB more on 1 h)
 
 # Diarization: gated pyannote pipelines tried in order (need HF_TOKEN + accepted terms),
 # then an ungated voice-embedding clustering fallback.

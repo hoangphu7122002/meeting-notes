@@ -131,3 +131,27 @@ def test_transcribe_blocks_vad_skips_silent_blocks_and_offsets_spans():
     segs = transcribe_blocks(blocks, {"mic": audio}, fake, ["vi", "en"], vad=True, split_gap=2.0)
     assert len(fake.calls) == 2 and len(segs) == 2  # two spans of block 1, nothing for the silent block
     assert abs(segs[0].start - 1.95) < 0.2 and abs(segs[1].start - 7.95) < 0.2
+
+
+def test_transcriber_caps_mlx_cache(monkeypatch):
+    import sys
+    import types
+
+    from meeting_notes.config import Config
+    from meeting_notes.transcribe import Transcriber
+
+    calls = []
+    mx = types.SimpleNamespace(float16="f16", set_cache_limit=calls.append)
+    holder = types.SimpleNamespace(get_model=lambda name, dtype: "model")
+    mlx = types.ModuleType("mlx")
+    mlx.core = mx
+    monkeypatch.setitem(sys.modules, "mlx", mlx)
+    monkeypatch.setitem(sys.modules, "mlx.core", mx)
+    monkeypatch.setitem(sys.modules, "mlx_whisper.transcribe", types.SimpleNamespace(ModelHolder=holder))
+    monkeypatch.setitem(sys.modules, "mlx_whisper", types.ModuleType("mlx_whisper"))
+
+    assert Transcriber(Config())._load() == "model"
+    assert calls == [256 * 2**20]
+    calls.clear()
+    Transcriber(Config(mlx_cache_limit_mb=-1))._load()
+    assert calls == []
