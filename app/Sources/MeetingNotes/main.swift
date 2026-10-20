@@ -39,6 +39,13 @@ if let index = arguments.firstIndex(of: "--self-test-record") {
     SelfTest.run(seconds: seconds, folder: folder, pause: pauseAt.flatMap { at in pauseFor.map { (at, $0) } })
 }
 
+if let index = arguments.firstIndex(of: "--check-screen-capture") {
+    // Writes the real Screen & System Audio Recording state to a file. Launch it through
+    // `open -n -a MeetingNotes --args --check-screen-capture <file>` so TCC attributes it to the app.
+    let path = index + 1 < arguments.count ? arguments[index + 1] : "/dev/stdout"
+    ScreenCaptureCheck.runAndExit(writingTo: URL(fileURLWithPath: (path as NSString).expandingTildeInPath))
+}
+
 #if DEBUG
 if let index = arguments.firstIndex(of: "--self-test-worker") {
     let folders = arguments.dropFirst(index + 1).prefix { !$0.hasPrefix("-") }.map { URL(fileURLWithPath: $0, isDirectory: true) }

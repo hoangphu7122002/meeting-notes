@@ -155,12 +155,41 @@ final class AppController {
         writeStateFile(AppStatusSnapshot(state: "not_running"), sync: true)
     }
 
-    /// Re-reads permission state (app activation, main window key; never polled).
+    /// Re-reads permission state (app activation, main window key, "Kiểm tra"; never polled).
+    /// When the CoreGraphics preflight says no, ScreenCaptureKit is asked in the background and the
+    /// state is updated from its answer (the preflight can stay false on macOS 15 while capture works).
     /// Returns true when a previously complete setup regressed.
     @discardableResult
     func refreshPermissions() -> Bool {
+        let regressed = applyPermissions()
+        if !Permissions.screenCapturePreflight { verifyScreenCapture() }
+        return regressed
+    }
+
+    /// Last ScreenCaptureKit answer: true = capture works, false = TCC declined, nil = not known.
+    private var screenCaptureVerified: Bool?
+    private var screenCaptureProbe: Task<Void, Never>?
+
+    private func verifyScreenCapture() {
+        guard screenCaptureProbe == nil else { return }
+        screenCaptureProbe = Task { @MainActor [weak self] in
+            let probe = await Permissions.probeScreenCapture()
+            guard let self else { return }
+            self.screenCaptureProbe = nil
+            if probe.shareableOK {
+                self.screenCaptureVerified = true
+            } else if probe.declined {
+                self.screenCaptureVerified = false
+            }
+            self.applyPermissions()
+        }
+    }
+
+    @discardableResult
+    private func applyPermissions() -> Bool {
         let microphone = Permissions.microphone
-        let screen: PermissionStatus = Permissions.screenCapture ? .granted : .denied
+        let screenGranted = Permissions.screenCapturePreflight || screenCaptureVerified == true
+        let screen: PermissionStatus = screenGranted ? .granted : .denied
         if state.microphone != microphone { state.microphone = microphone }
         if state.screenCapture != screen { state.screenCapture = screen }
         notifier.status { [weak self] status in
@@ -247,6 +276,7 @@ final class AppController {
                 titleTargetKey = MeetingFolders.key(created)
                 jobs.recordingActive = true
                 systemAudio = session.systemAudioAvailable ? .ok : .notPermitted
+                if session.systemAudioAvailable { screenCaptureVerified = true }
                 micAvailable = session.micWriter != nil
                 silence = SilenceTracker(thresholdDB: -50, limit: Double(Settings.autoStopSilenceMinutes * 60))
                 systemSilence = SilenceTracker(thresholdDB: -50, limit: 10)
@@ -1009,7 +1039,13 @@ extension AppController: AppCommands {
             } else {
                 micError = tr(.micAccessDenied)
             }
-            do { try await system.start() } catch { systemFailed = true }
+            do {
+                try await system.start()
+                screenCaptureVerified = true
+            } catch {
+                systemFailed = true
+                if Permissions.isPermissionError(error) { screenCaptureVerified = false }
+            }
             let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.state.audioTest.me = LevelMeter.displayValue(micSink.meter.level())
