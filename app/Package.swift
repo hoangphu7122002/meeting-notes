@@ -48,6 +48,11 @@ let package = Package(
             dependencies: ["MeetingNotesCore"],
             path: "Tests/MeetingNotesCoreTests"
         ),
+        .testTarget(
+            name: "MeetingNotesUITests",
+            dependencies: ["MeetingNotesCore", "MeetingNotesUI"],
+            path: "Tests/MeetingNotesUITests"
+        ),
     ],
     swiftLanguageModes: [.v5]
 )

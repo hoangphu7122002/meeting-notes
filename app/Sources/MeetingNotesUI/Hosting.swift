@@ -80,3 +80,16 @@ public extension View {
             .onGeometryChange(for: CGSize.self, of: { $0.size }, action: action)
     }
 }
+
+public extension NSWindow {
+    /// Installs a SwiftUI hosting view built by `make` unless the window already hosts `Content`.
+    /// A fresh `NSWindow` always has a plain `NSView` content view, so `contentView == nil` is not a
+    /// usable "not built yet" check: it left the main window blank on first launch.
+    /// Returns true when a new hosting view was installed.
+    @discardableResult
+    func hostContentIfNeeded<Content: View>(_ make: () -> NSHostingView<Content>) -> Bool {
+        if contentView is NSHostingView<Content> { return false }
+        contentView = make()
+        return true
+    }
+}

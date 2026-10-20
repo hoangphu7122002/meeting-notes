@@ -184,7 +184,9 @@ enum Renderer {
     }
 
     /// Offscreen window (never ordered front) that gives the view a backing and an appearance.
-    static func host(_ view: NSView, size: CGSize, appearance: NSAppearance) -> NSWindow {
+    /// Installs the view the same way the app does (`hostContentIfNeeded` on a fresh window), so a
+    /// preview fails the same way the app would if the hosting view never got attached.
+    static func host<Content: View>(_ view: NSHostingView<Content>, size: CGSize, appearance: NSAppearance) -> NSWindow {
         let window = NSWindow(contentRect: NSRect(origin: CGPoint(x: -20_000, y: -20_000), size: size), styleMask: [.borderless],
                               backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -192,7 +194,8 @@ enum Renderer {
         window.backgroundColor = .clear
         window.isOpaque = false
         view.appearance = appearance
-        window.contentView = view
+        window.hostContentIfNeeded { view }
+        precondition(window.contentView === view, "hosting view not attached")
         view.frame = NSRect(origin: .zero, size: size)
         return window
     }

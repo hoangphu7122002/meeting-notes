@@ -133,13 +133,13 @@ final class UIHub: NSObject, UIPresenter, NSWindowDelegate {
             mainWindow = window
         }
         guard let window = mainWindow else { return }
-        if window.contentView == nil {
-            // Built on show and released on close, so a closed window costs nothing.
+        // Built on show and released on close, so a closed window costs nothing.
+        window.hostContentIfNeeded {
             let view = MainWindowView(state: controller.state, commands: controller,
                                       editingChanged: { [weak self] editing in self?.windowTitleEditing(editing) })
             let hosting = NSHostingView(rootView: view)
             hosting.sizingOptions = [.minSize]
-            window.contentView = hosting
+            return hosting
         }
         present(window)
         mainWindowVisibilityChanged()
