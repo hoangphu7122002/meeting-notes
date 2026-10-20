@@ -44,7 +44,7 @@ def paragraphs(segments: list[dict], max_gap: float = 2.5, max_len: float = 90.0
 
 def render_notes(meeting: dict, transcript: dict, summary: dict | None, summary_error: str | None = None,
                  pending: bool = False) -> str:
-    lang = transcript.get("language") or "en"
+    lang = (summary or {}).get("language") or transcript.get("language") or "en"
     h = HEADINGS.get(lang, HEADINGS["en"])
     if meeting.get("title_source") == "user":
         title = meeting.get("title") or "Meeting"
@@ -64,7 +64,8 @@ def render_notes(meeting: dict, transcript: dict, summary: dict | None, summary_
         meta.append(f"**{h['duration']}:** {round(duration / 60)} min")
     if transcript.get("speakers"):
         meta.append(f"**{h['speakers']}:** {', '.join(transcript['speakers'])}")
-    meta.append(f"**{h['language']}:** {LANGUAGE_NAMES.get(lang, lang)}")
+    spoken = transcript.get("language") or lang
+    meta.append(f"**{h['language']}:** {LANGUAGE_NAMES.get(spoken, spoken)}")
     lines += [" · ".join(meta), ""]
 
     if summary:
@@ -86,6 +87,7 @@ def render_notes(meeting: dict, transcript: dict, summary: dict | None, summary_
         lines += ["", f"## {h['questions']}", ""]
         lines += [f"- {q}" for q in summary["open_questions"]] or [h["none"]]
         lines.append("")
+        lines += section_lines(summary, lang)
     elif pending:
         lines += [f"> _{h['pending']}_", ""]
     else:
@@ -102,6 +104,20 @@ def render_notes(meeting: dict, transcript: dict, summary: dict | None, summary_
         lines += [f"**[{timestamp(p['start'])}] {p['speaker']}:** {p['text']}", ""]
     lines += [line for x in pauses for line in (pause_line(x, h), "")]
     return "\n".join(lines).rstrip() + "\n"
+
+
+def section_lines(summary: dict, lang: str) -> list[str]:
+    """Template-specific sections (standup blockers, interview strengths, ...) after the standard ones."""
+    from .summarize import TEMPLATES, template_name
+
+    defs = TEMPLATES[template_name(summary.get("template"))]["sections"]
+    out: list[str] = []
+    for key, items in (summary.get("sections") or {}).items():
+        if not items:
+            continue
+        en, vi, _ = defs.get(key, (key.replace("_", " ").capitalize(), key.replace("_", " ").capitalize(), ""))
+        out += [f"## {vi if lang == 'vi' else en}", "", *[f"- {x}" for x in items], ""]
+    return out
 
 
 def pause_line(pause: dict, h: dict) -> str:

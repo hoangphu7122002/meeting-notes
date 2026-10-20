@@ -40,7 +40,7 @@ def test_worker_cancel(meeting, stubs, monkeypatch):  # noqa: F811
     w, out = make_worker(monkeypatch)
     import meeting_notes.transcribe as T
 
-    def slow_blocks(blocks, tracks, transcriber, allowed, progress=None):
+    def slow_blocks(blocks, tracks, transcriber, allowed, progress=None, **kw):
         w.cancel.set()  # simulates {"cmd": "cancel"} arriving mid-transcription
         progress(0.5, "halfway")
         raise AssertionError("should have been cancelled")

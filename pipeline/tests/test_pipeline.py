@@ -58,11 +58,11 @@ def stubs(monkeypatch):
         def release(self):
             pass
 
-    def fake_transcribe_blocks(blocks, tracks, transcriber, allowed, progress=None):
+    def fake_transcribe_blocks(blocks, tracks, transcriber, allowed, progress=None, **kw):
         calls["transcribe"] += 1
         return [Segment(b.start, b.end, b.speaker, b.track, "vi", f"câu của {b.speaker}") for b in blocks]
 
-    def fake_summarize(lines, language, cfg, progress=None):
+    def fake_summarize(lines, language, cfg, progress=None, **kw):
         calls["summarize"] += 1
         return {"title": "Kế hoạch ra mắt", "summary": ["a"], "decisions": ["b"], "action_items": [], "open_questions": []}
 

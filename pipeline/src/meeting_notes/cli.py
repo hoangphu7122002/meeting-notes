@@ -109,6 +109,13 @@ def cmd_doctor(args, cfg: Config) -> int:
         report["whisper_model"] = f"{cfg.whisper_model} ({'cached' if isinstance(cached, str) else 'will download on first use'})"
     except Exception:
         report["whisper_model"] = cfg.whisper_model
+    from .config import glossary_entries
+    from .summarize import template_name
+
+    report["glossary"] = f"{len(glossary_entries(cfg.glossary))} term(s)"
+    report["summary_template"] = template_name(cfg.summary_template)
+    report["asr"] = (f"vad={'on' if cfg.whisper_vad else 'off'}, temperature fallback="
+                     f"{'on' if cfg.whisper_temperature_fallback else 'off'}, chunk {cfg.whisper_max_chunk_sec:g}s")
     if hf_token() and not args.offline:
         report["diarization_access"] = check_hf_access(cfg.diarization_models)
     client = Ollama(cfg)

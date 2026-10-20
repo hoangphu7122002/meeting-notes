@@ -71,3 +71,63 @@ def test_split_by_language_at_turn_boundaries():
     assert out[1].parts[0] == (9.5, 15)
     same = split_by_language([b], lambda blk, s, e: "vi")
     assert same == [b]
+
+
+def test_collapse_repeats():
+    from meeting_notes.transcribe import collapse_repeats
+
+    assert collapse_repeats("cảm ơn cảm ơn cảm ơn cảm ơn cảm ơn") == "cảm ơn"
+    assert collapse_repeats("ok, ok, ok, ok. Let's go") == "ok. Let's go"
+    assert collapse_repeats("we we will go") == "we we will go"  # short stutters are kept
+    assert collapse_repeats("Chúng ta sẽ phát hành vào thứ sáu.") == "Chúng ta sẽ phát hành vào thứ sáu."
+
+
+def test_whisper_prompt_from_glossary():
+    from meeting_notes.config import Config, glossary_entries
+    from meeting_notes.transcribe import whisper_prompt
+
+    assert whisper_prompt(Config(), "vi") is None
+    cfg = Config(glossary=["Momos", "Tuấn: product lead", "momos", " Kubernetes "], initial_prompt="Họp sản phẩm.")
+    assert glossary_entries(cfg.glossary) == [("Momos", ""), ("Tuấn", "product lead"), ("Kubernetes", "")]
+    assert whisper_prompt(cfg, "vi") == "Họp sản phẩm. Momos, Tuấn, Kubernetes."
+    assert whisper_prompt(Config(glossary=["Momos"]), "en") == "Momos."
+    assert glossary_entries("A, B\nC") == [("A", ""), ("B", ""), ("C", "")]
+    long = whisper_prompt(Config(glossary=[f"term{i:03d}" for i in range(200)]), "en")
+    assert len(long) < 600
+
+
+def _speechlike(sec, f0=140.0):
+    t = np.arange(int(sec * SR)) / SR
+    return (0.2 * np.sign(np.sin(2 * np.pi * f0 * t)) * (0.6 + 0.4 * np.sin(2 * np.pi * 3 * t))).astype(np.float32)
+
+
+def test_speech_spans_skip_noise_and_split_long_pauses():
+    from meeting_notes.transcribe import speech_spans, speech_threshold_db
+
+    rng = np.random.default_rng(0)
+    room = rng.normal(0, 0.002, SR * 20).astype(np.float32)
+    clicks = room.copy()
+    for k in range(0, len(clicks) - 200, int(0.18 * SR)):
+        clicks[k:k + 192] += rng.normal(0, 0.05, 192).astype(np.float32)
+    speech = room.copy()
+    speech[SR:SR * 3] += _speechlike(2)
+    speech[SR * 9:SR * 11] += _speechlike(2, 180)
+    th = speech_threshold_db(np.concatenate([speech, room]))
+    assert speech_spans(room, th, 2.0) == []
+    assert speech_spans(clicks, th, 2.0) == []  # keyboard: loud but not voiced
+    spans = speech_spans(speech, th, 2.0)
+    assert len(spans) == 2  # 6 s pause splits the block, silence around is trimmed
+    assert abs(spans[0][0] / SR - 0.7) < 0.15 and abs(spans[1][1] / SR - 11.3) < 0.15
+    assert len(speech_spans(speech, th, 10.0)) == 1
+
+
+def test_transcribe_blocks_vad_skips_silent_blocks_and_offsets_spans():
+    rng = np.random.default_rng(1)
+    audio = rng.normal(0, 0.002, SR * 30).astype(np.float32)
+    audio[SR * 2:SR * 4] += _speechlike(2)
+    audio[SR * 8:SR * 10] += _speechlike(2)
+    blocks = [Block(1, 11, "Me", "mic"), Block(15, 28, "Me", "mic")]  # second block is silence only
+    fake = FakeTranscriber()
+    segs = transcribe_blocks(blocks, {"mic": audio}, fake, ["vi", "en"], vad=True, split_gap=2.0)
+    assert len(fake.calls) == 2 and len(segs) == 2  # two spans of block 1, nothing for the silent block
+    assert abs(segs[0].start - 1.95) < 0.2 and abs(segs[1].start - 7.95) < 0.2

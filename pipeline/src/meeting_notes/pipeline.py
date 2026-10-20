@@ -288,11 +288,12 @@ class Processor:
         diar = read_json(self.m.work / "diarization.json") or {}
         turns = [Turn(**t) for t in diar.get("turns", [])]
         tracks = self._audio()
-        blocks = split_long_blocks(build_blocks(turns), tracks)
+        blocks = split_long_blocks(build_blocks(turns), tracks, max_len=self.cfg.whisper_max_chunk_sec)
         self.r.progress(0.0, f"Loading {self.cfg.whisper_model.split('/')[-1]}")
         transcriber = self.models.transcriber()
         try:
-            segments = transcribe_blocks(blocks, tracks, transcriber, self.cfg.languages, lambda f, msg: self.r.progress(f, msg))
+            segments = transcribe_blocks(blocks, tracks, transcriber, self.cfg.languages, lambda f, msg: self.r.progress(f, msg),
+                                         vad=self.cfg.whisper_vad, split_gap=self.cfg.vad_split_gap)
         finally:
             self.models.done_with_transcriber()
         stats = language_stats(segments)
@@ -323,15 +324,17 @@ class Processor:
         if self._skip("summarize", out, force):
             return
         from .render import transcript_lines
-        from .summarize import summarize
+        from .summarize import summarize, summary_language
 
         transcript = read_json(self.m.file("transcript.json")) or {}
         lines = transcript_lines(transcript.get("segments", []))
         if not lines:
             self.r.stage_end("summarize", "skipped", "empty transcript")
             return
+        language = summary_language(transcript.get("languages"), transcript.get("language", "en"), self.cfg.summary_language)
+        template = self.m.meeting.get("template") or self.cfg.summary_template
         try:
-            notes = summarize(lines, transcript.get("language", "en"), self.cfg, lambda f, msg: self.r.progress(f, msg))
+            notes = summarize(lines, language, self.cfg, lambda f, msg: self.r.progress(f, msg), template=template)
         except Cancelled:
             raise
         except Exception as exc:

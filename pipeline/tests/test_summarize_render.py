@@ -23,7 +23,7 @@ def test_chunk_lines():
 def test_summarize_map_reduce(monkeypatch):
     calls = []
 
-    def fake_chat(self, system, user, tick=None):
+    def fake_chat(self, system, user, tick=None, fmt=None):
         calls.append(user)
         assert "Vietnamese" in system
         return {"title": "T", "summary": [user[:10]], "decisions": [], "action_items": [], "open_questions": []}
@@ -76,3 +76,88 @@ def test_render_notes_vietnamese():
 def test_render_without_summary():
     md = render_notes({"title": "Meeting"}, {"language": "en", "segments": SEGMENTS}, None, "Ollama down")
     assert "Summary unavailable:** Ollama down" in md and "## Transcript" in md
+
+
+def test_templates_schema_and_prompt():
+    assert S.template_name("1:1") == "one_on_one" and S.template_name("Standup") == "standup"
+    assert S.template_name("nonsense") == "general" and S.template_name(None) == "general"
+    assert "sections" not in S.schema("general")["properties"]
+    standup = S.schema("standup")
+    assert set(standup["properties"]["sections"]["properties"]) == {"updates", "blockers"}
+    # The app's summary keys stay required in every template.
+    for name in S.TEMPLATES:
+        assert {"title", "summary", "decisions", "action_items", "open_questions"} <= set(S.schema(name)["required"])
+    system = S.build_system("vi", "interview", ["Tuấn: product lead", "Momos"], ["Me", "Speaker 1"])
+    assert "Vietnamese" in system and "job interview" in system and "strengths" in system
+    assert "- Tuấn (product lead)" in system and "- Momos" in system and "Speaker 1" in system
+
+
+def test_ground_notes_drops_invented_owner_and_due():
+    transcript = "[00:00:01] Me: Anh Tuấn sẽ gửi báo cáo trước thứ sáu.\n[00:00:05] Speaker 1: I will fix the login bug."
+    notes = S.normalize_notes({"title": "x", "summary": [], "decisions": [], "open_questions": [], "action_items": [
+        {"task": "Gửi báo cáo", "owner": "anh Tuan", "due": "trước thứ sáu"},       # accent-insensitive match
+        {"task": "Fix login bug", "owner": "Speaker 1", "due": "2026-10-23"},       # computed date: dropped
+        {"task": "Update docs", "owner": "Lan", "due": "next Monday"},             # nobody named Lan, no Monday
+        {"task": "Review", "owner": "Không rõ", "due": "N/A"},
+    ]})
+    out = S.ground_notes(notes, transcript, ["Me", "Speaker 1"])
+    items = out["action_items"]
+    assert items[0] == {"task": "Gửi báo cáo", "owner": "anh Tuan", "due": "trước thứ sáu"}
+    assert items[1]["owner"] == "Speaker 1" and items[1]["due"] is None
+    assert items[2]["owner"] is None and items[2]["due"] is None
+    assert items[3]["owner"] is None and items[3]["due"] is None
+    assert out["grounding"] == {"dropped_owner": 1, "dropped_due": 2}
+
+
+def test_summary_language_prefers_vietnamese_when_substantial():
+    assert S.summary_language({"vi": 45.0, "en": 55.0}, "en") == "vi"
+    assert S.summary_language({"vi": 10.0, "en": 90.0}, "en") == "en"
+    assert S.summary_language({}, "en") == "en"
+    assert S.summary_language({"vi": 90.0}, "vi", "en") == "en"
+
+
+def test_summarize_single_pass_grounds_and_tags(monkeypatch):
+    seen = {}
+
+    def fake_chat(self, system, user, tick=None, fmt=None):
+        seen["system"], seen["fmt"] = system, fmt
+        return S.normalize_notes({"title": "Standup", "summary": ["a"], "decisions": [], "open_questions": [],
+                                  "action_items": [{"task": "Deploy", "owner": "Minh", "due": "tomorrow"}],
+                                  "sections": {"updates": ["Me: done X"], "blockers": []}})
+
+    monkeypatch.setattr(S.Ollama, "ensure_model", lambda self, progress=None: None)
+    monkeypatch.setattr(S.Ollama, "chat", fake_chat)
+    cfg = Config(glossary=["Momos"], summary_template="standup")
+    out = S.summarize(["[00:00:01] Me: I will deploy tomorrow."], "en", cfg)
+    assert "sections" in seen["fmt"]["properties"] and "Momos" in seen["system"]
+    assert out["template"] == "standup" and out["language"] == "en"
+    assert out["action_items"] == [{"task": "Deploy", "owner": None, "due": "tomorrow"}]
+    assert out["sections"] == {"updates": ["Me: done X"], "blockers": []}
+
+
+def test_map_reduce_grounds_each_part(monkeypatch):
+    def fake_chat(self, system, user, tick=None, fmt=None):
+        if "part 1 of" in user:  # owner "Lan" only appears in part 2: invented for part 1
+            return S.normalize_notes({"title": "T", "summary": [], "decisions": [], "open_questions": [],
+                                      "action_items": [{"task": "A", "owner": "Lan", "due": None}]})
+        if "part 2 of" in user:
+            return S.normalize_notes({"title": "T", "summary": [], "decisions": [], "open_questions": [], "action_items": []})
+        merged = json.loads(user.split("Partial notes (JSON):\n", 1)[1])
+        return S.normalize_notes({"title": "T", "summary": [], "decisions": [], "open_questions": [],
+                                  "action_items": [i for p in merged for i in p["action_items"]]})
+
+    monkeypatch.setattr(S.Ollama, "ensure_model", lambda self, progress=None: None)
+    monkeypatch.setattr(S.Ollama, "chat", fake_chat)
+    lines = ["[00:00:01] Me: " + "x" * 40, "[00:01:00] Speaker 1: Lan joined late."]
+    out = S.summarize(lines, "en", Config(summary_chunk_chars=60))
+    assert out["action_items"] == [{"task": "A", "owner": None, "due": None}]
+
+
+def test_render_template_sections_and_summary_language():
+    transcript = {"language": "en", "segments": SEGMENTS, "speakers": ["Me"]}
+    summary = {"title": "Standup", "summary": ["x"], "decisions": [], "open_questions": [], "action_items": [],
+               "language": "vi", "template": "standup", "sections": {"updates": ["Me: xong A"], "blockers": []}}
+    md = render_notes({"title": "Meeting"}, transcript, summary)
+    assert "## Tóm tắt" in md and "## Cập nhật theo người\n\n- Me: xong A" in md
+    assert "Vướng mắc" not in md  # empty sections are omitted
+    assert "**Ngôn ngữ:** English" in md  # spoken language stays in the header

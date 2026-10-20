@@ -19,7 +19,19 @@ class Config:
     whisper_model: str = "mlx-community/whisper-large-v3-turbo"
     # Allowed spoken languages (ISO 639-1). Detection is restricted to this set; empty = any language.
     languages: list[str] = field(default_factory=lambda: ["vi", "en"])
-    initial_prompt: str = ""
+    initial_prompt: str = ""  # free-text hint prepended to the glossary in the whisper prompt
+    # Custom vocabulary: names, products, jargon. Used in the whisper prompt (spelling) and the summary
+    # prompt (correct names, owners). An entry may carry a note after ":", e.g. "Tuấn: product lead";
+    # the note goes to the summary only.
+    glossary: list[str] = field(default_factory=list)
+    # Voice-activity trimming inside each speaker block: skip silent blocks, cut long pauses (>= vad_split_gap
+    # seconds) so whisper never decodes long silence (the main source of hallucinated repeats).
+    whisper_vad: bool = True
+    vad_split_gap: float = 2.0
+    # Re-decode at higher temperature when a window looks degenerate (repeats / low confidence).
+    whisper_temperature_fallback: bool = True
+    whisper_condition_on_previous_text: bool = False  # True feeds earlier text back in: more repeat loops
+    whisper_max_chunk_sec: float = 28.0  # whisper only applies the prompt to the first 30 s window of a call
     # Diarization. Gated pyannote pipelines are tried in order; the fallback clusters speaker
     # embeddings from an ungated model, or labels tracks "Me" / "Others" if that also fails.
     diarization_models: list[str] = field(
@@ -43,6 +55,10 @@ class Config:
     ollama_num_thread: int = 4
     ollama_timeout_sec: int = 900
     summary_chunk_chars: int = 18000
+    # Summary template: general | one_on_one | standup | interview (a meeting.json "template" key overrides it).
+    summary_template: str = "general"
+    # Notes language: "auto" = the meeting's main spoken language, or an ISO code such as "vi" / "en".
+    summary_language: str = "auto"
     ollama_preload: bool = False  # True: load the summary model while transcribing (faster, more RAM at once)
     # Resource limits so processing never makes the Mac feel slow.
     # "low": nice 10 + utility QoS (default) | "background": macOS background QoS, gentlest but ~3x slower
@@ -74,6 +90,7 @@ class Config:
             "MEETING_NOTES_WHISPER_MODEL": "whisper_model",
             "MEETING_NOTES_OLLAMA_MODEL": "ollama_model",
             "MEETING_NOTES_OLLAMA_URL": "ollama_url",
+            "MEETING_NOTES_SUMMARY_TEMPLATE": "summary_template",
         }
         for env, attr in env_map.items():
             if os.environ.get(env):
@@ -83,6 +100,22 @@ class Config:
     @property
     def notes_path(self) -> Path:
         return Path(self.notes_dir).expanduser()
+
+
+def glossary_entries(glossary: list[str] | str | None) -> list[tuple[str, str]]:
+    """Parse glossary entries into (term, note) pairs. Accepts a list or one comma/newline separated string."""
+    if not glossary:
+        return []
+    items = glossary.replace("\n", ",").split(",") if isinstance(glossary, str) else [str(g) for g in glossary]
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for item in items:
+        term, _, note = item.partition(":")
+        term, note = " ".join(term.split()), " ".join(note.split())
+        if term and term.lower() not in seen:
+            seen.add(term.lower())
+            out.append((term, note))
+    return out
 
 
 def hf_token() -> str | None:

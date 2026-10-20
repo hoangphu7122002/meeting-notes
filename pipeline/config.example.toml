@@ -10,8 +10,19 @@ notes_dir = "~/MeetingNotes"
 whisper_model = "mlx-community/whisper-large-v3-turbo"
 # Spoken languages to choose from (ISO 639-1). [] = let Whisper pick any language.
 languages = ["vi", "en"]
-# Optional vocabulary hint (names, product terms), e.g. "Momos, Zalo, Kubernetes, OKR".
+# Custom vocabulary: people, products, jargon. Used by the whisper prompt (spelling) and by the summary
+# (correct names and owners). Add a note after ":" for the summary only, e.g. "Tuấn: product lead".
+glossary = []
+# glossary = ["Momos", "Zalo", "Kubernetes", "OKR", "Tuấn: product lead", "Minh Anh"]
+# Optional free-text hint placed before the glossary in the whisper prompt, e.g. "Họp sản phẩm hằng tuần."
 initial_prompt = ""
+# Voice-activity trimming per speaker block: skips blocks without voiced speech (keyboard, room noise) and
+# cuts pauses >= vad_split_gap seconds, so whisper never decodes long silence (hallucinated "Thank you." etc.).
+whisper_vad = true
+vad_split_gap = 2.0
+whisper_temperature_fallback = true        # re-decode degenerate windows at higher temperature
+whisper_condition_on_previous_text = false # true feeds earlier text back in: more repeat loops
+whisper_max_chunk_sec = 28.0               # whisper applies the prompt only to the first 30 s of each call
 
 # Diarization: gated pyannote pipelines tried in order (need HF_TOKEN + accepted terms),
 # then an ungated voice-embedding clustering fallback.
@@ -29,6 +40,11 @@ ollama_keep_alive = "1m"    # unload soon after the summary
 ollama_num_thread = 4
 ollama_preload = false      # true: load the summary model during transcription (faster, more RAM at once)
 summary_chunk_chars = 18000 # longer transcripts are summarized in parts, then merged
+# Summary template: general | one_on_one | standup | interview. Adds template sections (standup: updates,
+# blockers; 1:1: feedback, growth; interview: strengths, concerns). A meeting.json "template" key wins.
+summary_template = "general"
+# Notes language: "auto" = Vietnamese when >= 40% of the speech is Vietnamese, else the main language.
+summary_language = "auto"
 
 # Resource use while processing.
 priority = "low"            # low (nice + utility QoS) | background (gentlest, ~3x slower) | normal
