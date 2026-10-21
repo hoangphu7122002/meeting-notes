@@ -27,7 +27,7 @@ app/Sources/
 app/Tests/               Core tests
 pipeline/src/meeting_notes/
   config/                settings kernel (Config, TOML + env loader, hf_token, redact)
-  domain/                pure: stdlib + numpy; intervals, signal, speakers, segments, notes rules/markdown, metrics
+  domain/                pure: stdlib + numpy/scipy; intervals, signal, speakers, segments, notes rules/markdown, metrics
   application/           use cases + ports.py (Protocols): process_meeting, summarize_meeting, transcribe_blocks, import_audio
   adapters/outbound/     one vendor or sink per file: ffmpeg, wav, meeting folder, pyannote, mlx, ollama, hf hub, progress
   adapters/inbound/      commands.py (CLI handlers), worker.py (JSON-lines worker)
@@ -40,7 +40,7 @@ docs/  models/  build/   research + screenshots; model weights (ignored); app bu
 ## Architecture rules
 
 `make lint-arch` = `pipeline/tests/architecture` (pytest AST scan) + `scripts/check-swift-arch.sh`.
-- Python: domain imports stdlib and numpy only (no config, no I/O). Application imports domain, config and its own ports; never adapters. `adapters/outbound` and `adapters/inbound` never import each other. Heavy libs (`mlx*`, `torch`, `pyannote`, `huggingface_hub`, `soundfile`) and I/O stdlib (`subprocess`, `urllib`, `shutil`, `ctypes`) are adapter-only, imported lazily. Only `entrypoints/` wires adapters to use cases.
+- Python: domain imports pure stdlib, numpy and scipy only (no config, no I/O). Application imports domain, config, numpy and its own ports; never adapters. `adapters/outbound` and `adapters/inbound` never import each other. Heavy libs (`mlx*`, `torch`, `pyannote`, `huggingface_hub`, `soundfile`) and I/O stdlib (`subprocess`, `urllib`, `shutil`, `ctypes`) are adapter-only, imported lazily. Only `entrypoints/` wires adapters to use cases.
 - Swift: Core imports no SwiftUI/AppKit/ScreenCaptureKit/CoreAudio/UserNotifications/ServiceManagement/IOKit. UI imports no capture or worker frameworks (ScreenCaptureKit, CoreAudio, UserNotifications, IOKit, AVFoundation). Previews import only Foundation/AppKit/SwiftUI/Core/UI. Source files stay <= 300 lines (except `L10n.swift`).
 
 ## Contracts
