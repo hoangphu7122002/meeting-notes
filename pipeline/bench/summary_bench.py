@@ -1,13 +1,14 @@
 """Summary benchmark on synthetic transcripts with known facts (needs Ollama).
 
-  uv run python tests/eval/summary_bench.py [--model qwen3:4b] [--impl new|old] [--cases a,b] [--out result.json]
-  uv run python tests/eval/summary_bench.py --long <meeting>/transcript.json [--impl old]
+  uv run python bench/summary_bench.py [--model qwen3:4b] [--impl new|old] [--cases a,b] [--out result.json]
+  uv run python bench/summary_bench.py --long <meeting>/transcript.json [--impl old] [--old-ref <git ref>]
 
 `--long` scores a real pipeline transcript of the ~60 min synthetic meeting (make_long.py: 10 planted
 decisions / action items / one open question among filler) and reports recall, owner/due accuracy,
 output size, wall time and peak Ollama memory.
 
-`--impl old` loads summarize.py from git HEAD (the previous prompt) for a before/after comparison.
+`--impl old` loads the flat `summarize.py` from a git ref (`--old-ref`, default: the last commit before the layered
+package split) for a before/after comparison; its relative imports are rewritten to the new package layout.
 Scores per case: task recall, owner accuracy, invented owners / due dates (set where the transcript has
 none, or not supported by the transcript), decision recall, open-question recall, output language, time.
 """
@@ -25,7 +26,9 @@ import unicodedata
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-PIPELINE = HERE.parents[1]
+PIPELINE = HERE.parent
+OLD_REF = "4b403c9"  # last commit with the flat pipeline/src/meeting_notes/summarize.py
+OLD_PATH = "pipeline/src/meeting_notes/summarize.py"
 
 
 def fold(text: str) -> str:
@@ -228,7 +231,7 @@ class OllamaMemory:
 
 def run_long(mod, impl: str, path: Path, model: str, runs: int) -> list[dict]:
     from meeting_notes.config import Config
-    from meeting_notes.render import transcript_lines
+    from meeting_notes.domain.notes_markdown import transcript_lines
 
     transcript = json.loads(path.read_text())
     lines = transcript_lines(transcript["segments"])
@@ -250,14 +253,24 @@ def run_long(mod, impl: str, path: Path, model: str, runs: int) -> list[dict]:
     return rows
 
 
-def load_impl(impl: str):
+def load_impl(impl: str, old_ref: str = OLD_REF):
+    """A module-like object with `summarize(lines, language, cfg, [template=])` and `summary_language`."""
     if impl == "new":
-        from meeting_notes import summarize
+        from types import SimpleNamespace
 
-        return summarize
-    src = subprocess.run(["git", "show", "HEAD:pipeline/src/meeting_notes/summarize.py"], cwd=PIPELINE,
+        from meeting_notes.adapters.outbound.ollama_client import Ollama
+        from meeting_notes.application.summarize_meeting import summarize
+        from meeting_notes.domain.notes_rules import summary_language
+
+        def summarize_with_ollama(lines, language, cfg, progress=None, template=None):
+            return summarize(lines, language, cfg, progress, template=template, llm=Ollama(cfg))
+
+        return SimpleNamespace(summarize=summarize_with_ollama, summary_language=summary_language)
+    src = subprocess.run(["git", "show", f"{old_ref}:{OLD_PATH}"], cwd=PIPELINE,
                          capture_output=True, text=True, check=True).stdout
     path = PIPELINE / ".pytest_cache" / "summarize_old.py"
+    path.parent.mkdir(exist_ok=True)
+    src = src.replace("from .config import glossary_entries", "from meeting_notes.domain.glossary import glossary_entries")
     path.write_text(src.replace("from .config import", "from meeting_notes.config import"))
     spec = importlib.util.spec_from_file_location("summarize_old", path)
     mod = importlib.util.module_from_spec(spec)
@@ -317,16 +330,17 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="qwen3:4b")
     ap.add_argument("--impl", default="new", choices=["new", "old"])
+    ap.add_argument("--old-ref", default=OLD_REF, help="git ref holding the flat summarize.py for --impl old")
     ap.add_argument("--cases", default="")
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--out")
     ap.add_argument("--long", help="transcript.json of the 1-hour synthetic meeting (make_long.py)")
     args = ap.parse_args()
     from meeting_notes.config import Config
-    from meeting_notes.resources import low_priority
+    from meeting_notes.adapters.outbound.system_resources import low_priority
 
     low_priority()
-    mod = load_impl(args.impl)
+    mod = load_impl(args.impl, args.old_ref)
     if args.long:
         rows = run_long(mod, args.impl, Path(args.long), args.model, args.runs)
         if args.out:

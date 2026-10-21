@@ -1,8 +1,8 @@
 """Transcription benchmark on synthetic Vietnamese / English / code-switched speech (macOS `say`).
 
-  uv run python tests/eval/asr_bench.py make <dir>             # synthesize corpus.wav + corpus.json once
-  uv run python tests/eval/asr_bench.py run <dir> <variant>    # one variant, prints a JSON result line
-  uv run python tests/eval/asr_bench.py all <dir> [variants]   # every variant, each in its own process
+  uv run python bench/asr_bench.py make <dir>             # synthesize corpus.wav + corpus.json once
+  uv run python bench/asr_bench.py run <dir> <variant>    # one variant, prints a JSON result line
+  uv run python bench/asr_bench.py all <dir> [variants]   # every variant, each in its own process
   ... run|all ... --model <repo|path>      # override the whisper model (e.g. a converted ../models/phowhisper-large-mlx)
   ... run|all ... --vi-model <repo|path>   # route blocks detected as vi to this model; detection + other languages
                                            # use --model (default turbo); both models stay loaded
@@ -82,15 +82,15 @@ MODELS = {"turbo": "mlx-community/whisper-large-v3-turbo", "large": "mlx-communi
 
 
 def say(voice: str, text: str, tmp: Path) -> np.ndarray:
-    from meeting_notes import audio as A
+    from meeting_notes.adapters.outbound.ffmpeg_audio import decode
 
     path = tmp / f"{abs(hash((voice, text)))}.aiff"
     subprocess.run(["say", "-v", voice, "-o", str(path), text], check=True)
-    return A.decode(path)
+    return decode(path)
 
 
 def make(out: Path) -> None:
-    from meeting_notes import audio as A
+    from meeting_notes.adapters.outbound.wav_files import write_wav
 
     rng = np.random.default_rng(7)
     out.mkdir(parents=True, exist_ok=True)
@@ -135,7 +135,7 @@ def make(out: Path) -> None:
     pink = np.convolve(white, np.ones(8) / 8, mode="same")
     t = np.arange(length) / SR
     track += (0.003 * pink / pink.std() + 0.0015 * np.sin(2 * np.pi * 50 * t)).astype(np.float32)
-    A.write_wav(out / "corpus.wav", track)
+    write_wav(out / "corpus.wav", track)
     (out / "corpus.json").write_text(json.dumps({"glossary": GLOSSARY, "blocks": blocks}, ensure_ascii=False, indent=1))
     speech = sum(b["end"] - b["start"] for b in blocks if b["category"] != "noise")
     print(f"{out}: {length / SR:.0f} s audio, {len(blocks)} blocks, {speech:.0f} s in speech blocks")
@@ -143,7 +143,7 @@ def make(out: Path) -> None:
 
 def cer(ref: str, hyp: str) -> tuple[int, int]:
     """(char errors, reference chars) on normalized words joined by single spaces."""
-    from meeting_notes.metrics import edit_distance, words
+    from meeting_notes.domain.metrics import edit_distance, words
 
     r, h = " ".join(words(ref)), " ".join(words(hyp))
     return edit_distance(list(r), list(h)), len(r)
@@ -158,7 +158,7 @@ def routed_transcriber(cfg, vi_model: str):
     from mlx_whisper.load_models import load_model
     from mlx_whisper.transcribe import ModelHolder
 
-    from meeting_notes.transcribe import Transcriber
+    from meeting_notes.adapters.outbound.mlx_transcriber import Transcriber
 
     class Routed(Transcriber):
         _vi = None
@@ -178,23 +178,24 @@ def routed_transcriber(cfg, vi_model: str):
 
 
 def run(out: Path, variant: str, model_path: str | None = None, vi_model: str | None = None) -> dict:
-    from meeting_notes import audio as A
+    from meeting_notes.adapters.outbound.mlx_transcriber import Transcriber
+    from meeting_notes.adapters.outbound.wav_files import read_wav
+    from meeting_notes.application import transcribe_blocks as TB
+    from meeting_notes.application.transcribe_blocks import transcribe_blocks
     from meeting_notes.config import Config
-    from meeting_notes.metrics import term_hits, wer
-    from meeting_notes.speakers import Block
-    from meeting_notes.transcribe import Transcriber, split_long_blocks, transcribe_blocks
+    from meeting_notes.domain.metrics import term_hits, wer
+    from meeting_notes.domain.segments import split_long_blocks
+    from meeting_notes.domain.speakers import Block
 
     model, overrides = VARIANTS[variant]
     corpus = json.loads((out / "corpus.json").read_text())
     cfg = Config(whisper_model=model_path or MODELS[model], languages=["vi", "en"], glossary=corpus["glossary"])
     for k, v in overrides.items():
         if k == "_prompt_lead":
-            import meeting_notes.transcribe as T
-
-            T.PROMPT_LEAD = v
+            TB.PROMPT_LEAD = v
         else:
             setattr(cfg, k, v)
-    track = A.read_wav(out / "corpus.wav")
+    track = read_wav(out / "corpus.wav")
     tracks = {"mixed": track}
     truth = corpus["blocks"]
     tr = routed_transcriber(cfg, vi_model) if vi_model else Transcriber(cfg)
@@ -305,7 +306,7 @@ def main() -> None:
     if cmd == "make":
         make(out)
     elif cmd == "run":
-        from meeting_notes.resources import low_priority
+        from meeting_notes.adapters.outbound.system_resources import low_priority
 
         low_priority()
         print(json.dumps(run(out, a.variants or "new", a.model, a.vi_model), ensure_ascii=False))

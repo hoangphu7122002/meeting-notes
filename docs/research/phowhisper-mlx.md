@@ -7,7 +7,7 @@ Date: 2026-10-21. Question: should PhoWhisper (VinAI, Vietnamese fine-tune of Wh
 ## Method
 
 - Conversion: `pipeline/scripts/convert_phowhisper.py` turns a HF transformers Whisper checkpoint (`vinai/PhoWhisper-{small,medium,large}`) into the mlx-whisper format and can quantize (`--bits 4|8`, group size 64). The same script quantized turbo to q8/q4. Models live in `models/` (gitignored).
-- Harness: `pipeline/tests/eval/asr_bench.py` (`run|all <dir> <variant> --model <repo|path> [--vi-model <path>] [--label <name>]`). Each model runs in its own process (`nice 10`, 4 threads), full pipeline settings (`new` variant: VAD, glossary initial prompt, per-block language detection restricted to vi/en, temperature fallback). Models were run strictly one at a time.
+- Harness: `pipeline/bench/asr_bench.py` (`run|all <dir> <variant> --model <repo|path> [--vi-model <path>] [--label <name>]`). Each model runs in its own process (`nice 10`, 4 threads), full pipeline settings (`new` variant: VAD, glossary initial prompt, per-block language detection restricted to vi/en, temperature fallback). Models were run strictly one at a time.
 - Corpus: 194 s synthetic audio from macOS `say` (vi voice Linh, en voices Samantha/Daniel), 23 blocks: 6 vi, 6 en, 6 vi/en code-switch (glossary terms: Kubernetes, Jira, Postgres, ...), one 40 s vi monologue, 3 noise-only blocks (room tone, keyboard) that must yield no text.
 - Metrics: WER and CER on NFC, lowercased, punctuation-stripped text (`meeting_notes.metrics.words`; CER over the space-joined normalized string). RTF = ASR seconds / speech seconds. Memory: peak process RSS and peak MLX (Metal) memory from the run. "Terms" = glossary term recall.
 

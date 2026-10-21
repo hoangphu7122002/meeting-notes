@@ -121,7 +121,7 @@ The stages are `prepare → diarize → transcribe → summarize → render → 
   - **No headphones:** if the mic hears your speakers, mic activity during remote speech is treated as echo and dropped.
   - **In-person meetings:** several distinct voices on the mic get their own labels (`mic_speakers = "me"` turns this off).
 - **Transcription:** whisper large-v3-turbo (4-bit, `mlx-community/whisper-large-v3-turbo-q4`) runs per speaker block. The language is detected per block and per turn, restricted to `languages` (default `["vi", "en"]`), so mixed Vietnamese/English meetings are transcribed in the right language turn by turn. Typical Whisper hallucinations on silence ("Hẹn gặp lại các bạn trong những video tiếp theo", "Thanks for watching") are filtered out.
-- **Summary:** Ollama `qwen3:4b` by default (thinking disabled, JSON-schema output, temperature 0.2) produces the summary, decisions, action items and open questions in the main language. Long meetings (over `summary_chunk_chars`, ~20 min) are extracted part by part (`summary_extract_chars`); lines with explicit decision words, a commitment with a deadline, or a question said to be open are checked so none is lost, and the items are merged in Python rather than by the model. On a 1-hour synthetic test this raised recall of the 10 planted decisions/action items/questions from 1-2/10 to 10/10 (`pipeline/tests/eval/summary_bench.py --long`).
+- **Summary:** Ollama `qwen3:4b` by default (thinking disabled, JSON-schema output, temperature 0.2) produces the summary, decisions, action items and open questions in the main language. Long meetings (over `summary_chunk_chars`, ~20 min) are extracted part by part (`summary_extract_chars`); lines with explicit decision words, a commitment with a deadline, or a question said to be open are checked so none is lost, and the items are merged in Python rather than by the model. On a 1-hour synthetic test this raised recall of the 10 planted decisions/action items/questions from 1-2/10 to 10/10 (`pipeline/bench/summary_bench.py --long`).
 
 ## Change models
 
@@ -156,7 +156,7 @@ uv run python scripts/convert_phowhisper.py mlx-community/whisper-large-v3-turbo
 whisper_model = "/Users/you/meeting-notes/models/phowhisper-large-q8-mlx"   # or env MEETING_NOTES_WHISPER_MODEL
 ```
 
-PhoWhisper is **not** the default: in our benchmark it did not beat turbo on Vietnamese and handled English and code-switched terms much worse. Turbo q4 matched fp16 quality with about half the GPU memory, so it is the default (the published `mlx-community/whisper-large-v3-turbo-q4` scored the same as our local conversion). Numbers and method: `docs/research/phowhisper-mlx.md`. Benchmark a model with `uv run python tests/eval/asr_bench.py all <dir> new --model <path> --label <name>`.
+PhoWhisper is **not** the default: in our benchmark it did not beat turbo on Vietnamese and handled English and code-switched terms much worse. Turbo q4 matched fp16 quality with about half the GPU memory, so it is the default (the published `mlx-community/whisper-large-v3-turbo-q4` scored the same as our local conversion). Numbers and method: `docs/research/phowhisper-mlx.md`. Benchmark a model with `uv run python bench/asr_bench.py all <dir> new --model <path> --label <name>`.
 
 Environment overrides: `MEETING_NOTES_OLLAMA_MODEL`, `MEETING_NOTES_WHISPER_MODEL`, `MEETING_NOTES_DIR`, `MEETING_NOTES_CONFIG`.
 
@@ -216,7 +216,7 @@ Rules, layout and architecture checks: [`AGENTS.md`](AGENTS.md). Shortcuts: `mak
 ```sh
 cd pipeline
 uv run pytest                                       # unit tests (fast, no models)
-MEETING_NOTES_E2E=1 uv run pytest tests/test_e2e.py # end-to-end: synthetic Vietnamese/English meeting via `say` + real models + Ollama
+MEETING_NOTES_E2E=1 uv run pytest tests/e2e/test_e2e.py # end-to-end: synthetic Vietnamese/English meeting via `say` + real models + Ollama
 uv run python tests/e2e/make_synthetic.py /tmp/x    # just generate the synthetic meeting
 cd ../app && swift build && swift test             # app debug build + unit tests (MeetingNotesCore)
 swift run MeetingNotesPreviews ../docs/screenshots  # offscreen PNGs of the pill and main window (fake state; never starts the app)

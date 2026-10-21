@@ -74,7 +74,7 @@ Take: the cheapest win is correctness (ctx, no-think), then try MLX-LM 4-bit and
 
 Common: 3 real or consented meetings (30 min vi-heavy, 30 min en, 30 min code-switched) with manually corrected reference transcripts (use a 10 min excerpt each to limit labeling). Record per stage: wall time, peak RSS (`/usr/bin/time -l`), peak Metal memory (`mx.get_peak_memory()`), swap delta (`vm_stat` before/after), run under "Zoom open" and idle conditions. Run 3 times, report median.
 
-Extend `pipeline/tests/eval/asr_bench.py` (currently synthetic TTS cases via `say()`/`make()`, variants run through `run()`/`run_all()`):
+Extend `pipeline/bench/asr_bench.py` (currently synthetic TTS cases via `say()`/`make()`, variants run through `run()`/`run_all()`):
 1. Add a `--real <dir>` mode: audio + `ref.txt` pairs; compute WER (jiwer, NFC-normalized, lowercase, punctuation stripped) overall and split by language tag (vi spans vs en spans) for code-switch error rate.
 2. Add variants: `mlx-turbo-fp16` (baseline), `mlx-turbo-capped` (`set_cache_limit`), `mlx-turbo-4bit/8bit`, `mlx-large-v3`, `phowhisper-large-mlx` (convert HF to MLX), `whispercpp-q5_0-coreml` (subprocess), `vad-batched` vs `per-speaker-block` decode.
 3. Log peak memory and RTF for each variant to JSON for comparison.
@@ -90,5 +90,5 @@ Decision thresholds: adopt ASR change only if vi WER improves or is within 1 pp 
 - Peak memory of mlx-whisper with `set_cache_limit`, and quantized variants' vi WER (no published data found).
 - How much of the 20-30 min is swap-thrash vs compute? Measure with a clean-memory run first.
 - How much CPU/GPU headroom does a live call leave for background streaming ASR (ANE-only vs GPU)?
-- Summary: is context truncation already handled by chunking in `summarize.py`?
+- Summary: is context truncation already handled by chunking in `application/summarize_meeting.py`?
 - sherpa-onnx diarization speed/memory on Mac: not found, needs a direct test if Core ML route is rejected.
