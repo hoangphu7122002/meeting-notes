@@ -211,6 +211,8 @@ The app is built to stay out of the way while you work:
 
 ## Development
 
+Rules, layout and architecture checks: [`AGENTS.md`](AGENTS.md). Shortcuts: `make help` (`deps`, `dev`, `lint`, `lint-arch`, `test`, `test-e2e`, `build-app`, `previews`, `ci`, `clean`). Underlying commands:
+
 ```sh
 cd pipeline
 uv run pytest                                       # unit tests (fast, no models)
