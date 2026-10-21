@@ -4,10 +4,12 @@
 # (The menu bar app has its own setting: `defaults write com.hoangphu.meetingnotes notesDir <path>`.)
 notes_dir = "~/MeetingNotes"
 
-# Transcription: any mlx-whisper model (Hugging Face repo id or local path).
-#   mlx-community/whisper-large-v3-turbo  (default, fast, good Vietnamese)
-#   mlx-community/whisper-large-v3-mlx    (slower, slightly more accurate)
-whisper_model = "mlx-community/whisper-large-v3-turbo"
+# Transcription: any mlx-whisper model (Hugging Face repo id or local path; a missing local path falls back
+# to fp16 turbo with a warning).
+#   mlx-community/whisper-large-v3-turbo-q4  (default: turbo 4-bit, ~0.44 GB, ~1.2 GB peak GPU memory)
+#   mlx-community/whisper-large-v3-turbo     (fp16, same accuracy in our benchmark, ~2.3 GB peak, ~10% faster)
+#   mlx-community/whisper-large-v3-mlx       (slower, slightly more accurate)
+whisper_model = "mlx-community/whisper-large-v3-turbo-q4"
 # Spoken languages to choose from (ISO 639-1). [] = let Whisper pick any language.
 languages = ["vi", "en"]
 # Custom vocabulary: people, products, jargon. Used by the whisper prompt (spelling) and by the summary

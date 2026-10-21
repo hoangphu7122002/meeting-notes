@@ -3,7 +3,7 @@
 A free meeting-notes app for macOS that runs entirely on your Mac. Its main window shows what it is doing: click **Start recording** (or press **⌃⌥⌘R**) when a meeting starts, and **Stop & create notes** when it ends; while recording, a small floating control at the bottom of the screen shows the timer and levels. It records your microphone and the other participants (system audio from Zoom, Google Meet, Teams and so on). It then transcribes the audio, labels the speakers and writes a summary with action items, all locally.
 
 - **App** (`app/`, Swift/SwiftUI): records the mic and system audio as two separate tracks, using ScreenCaptureKit for system audio (no BlackHole needed). Main window (controls, meters, processing, recent meetings, permissions), optional floating pill, Dock icon and a compact menu bar icon, Vietnamese (default) or English UI (Settings › Ngôn ngữ / Language), global hotkeys, pause/resume, meeting detection, a notes viewer and a list of recent meetings.
-- **Pipeline** (`pipeline/`, Python/uv): handles transcription (mlx-whisper large-v3-turbo on the Apple GPU), speaker diarization (pyannote, with a fallback) and the summary (Ollama `qwen3:4b` by default, `qwen3:8b` optional). The app runs it after every recording, and you can run it yourself from the CLI.
+- **Pipeline** (`pipeline/`, Python/uv): handles transcription (mlx-whisper large-v3-turbo, 4-bit, on the Apple GPU), speaker diarization (pyannote, with a fallback) and the summary (Ollama `qwen3:4b` by default, `qwen3:8b` optional). The app runs it after every recording, and you can run it yourself from the CLI.
 
 Nothing is sent to a cloud service. The only network traffic is a one-time download of open model weights (Hugging Face, Ollama registry).
 
@@ -19,7 +19,7 @@ scripts/install.sh
 The script does the following:
 1. `brew install ffmpeg ollama` and `brew services start ollama`.
 2. `uv sync` for the pipeline.
-3. `meeting-notes setup` downloads the models: whisper turbo (~1.6 GB), the speaker-embedding model (~30 MB), `qwen3:4b` (~2.5 GB) and pyannote if you have access.
+3. `meeting-notes setup` downloads the models: whisper turbo 4-bit (~0.44 GB), the speaker-embedding model (~30 MB), `qwen3:4b` (~2.5 GB) and pyannote if you have access.
 4. Builds `MeetingNotes.app`, signs it with a local self-signed identity (created once by `scripts/setup-signing.sh`) and installs it to `~/Applications/MeetingNotes.app`.
 
 To rebuild only the app: `scripts/build-app.sh`. To check the setup: `uv run --project pipeline meeting-notes doctor`.
@@ -120,7 +120,7 @@ The stages are `prepare → diarize → transcribe → summarize → render → 
 - **Speakers:** the mic track is "Me". System audio is diarized separately, so remote participants become Speaker 1, 2, and so on.
   - **No headphones:** if the mic hears your speakers, mic activity during remote speech is treated as echo and dropped.
   - **In-person meetings:** several distinct voices on the mic get their own labels (`mic_speakers = "me"` turns this off).
-- **Transcription:** whisper large-v3-turbo runs per speaker block. The language is detected per block and per turn, restricted to `languages` (default `["vi", "en"]`), so mixed Vietnamese/English meetings are transcribed in the right language turn by turn. Typical Whisper hallucinations on silence ("Hẹn gặp lại các bạn trong những video tiếp theo", "Thanks for watching") are filtered out.
+- **Transcription:** whisper large-v3-turbo (4-bit, `mlx-community/whisper-large-v3-turbo-q4`) runs per speaker block. The language is detected per block and per turn, restricted to `languages` (default `["vi", "en"]`), so mixed Vietnamese/English meetings are transcribed in the right language turn by turn. Typical Whisper hallucinations on silence ("Hẹn gặp lại các bạn trong những video tiếp theo", "Thanks for watching") are filtered out.
 - **Summary:** Ollama `qwen3:4b` by default (thinking disabled, JSON-schema output, temperature 0.2) produces the summary, decisions, action items and open questions in the main language. Long meetings are summarized in parts and then merged.
 
 ## Change models
@@ -128,22 +128,23 @@ The stages are `prepare → diarize → transcribe → summarize → render → 
 Create `~/.config/meeting-notes/config.toml` (all keys in `pipeline/config.example.toml`):
 
 ```toml
-whisper_model = "mlx-community/whisper-large-v3-mlx"   # more accurate, ~2x slower
+whisper_model = "mlx-community/whisper-large-v3-mlx"   # more accurate, ~2x slower ("mlx-community/whisper-large-v3-turbo" = fp16 turbo)
 ollama_model  = "qwen2.5:7b"                            # run `ollama pull qwen2.5:7b` first (or let the pipeline pull it)
 languages     = []                                      # allow any language
 initial_prompt = "Momos, OKR, Kubernetes"               # vocabulary hint for names/terms
 ```
 
 Model notes:
+- **Whisper model:** the default is turbo quantized to 4 bits (`mlx-community/whisper-large-v3-turbo-q4`). In our benchmark it had the same WER as fp16 turbo on Vietnamese, English and code-switched speech, with peak GPU memory 1.24 GB instead of 2.31 GB, at ~10% slower decoding. Set `whisper_model = "mlx-community/whisper-large-v3-turbo"` for fp16 turbo.
 - **Summary model:** pick it in the app (Settings › Summary model: Light `qwen3:4b` ~3.6 GB loaded / Better `qwen3:8b` ~6.3 GB loaded), or set `ollama_model`.
   - The default is 4b because on this 16 GB Mac (Cursor, Chrome and a VM open) 8b pushed free memory down to 9% and grew swap by about 6.5 GB, which made the Mac lag. 4b kept free memory at 23% or more.
   - With the deadline-preserving prompt, 4b got the action items right on the test meeting. Use 8b when the Mac is otherwise idle.
 - `qwen3:14b` (~9 GB) is not recommended on 16 GB.
 - After changing the summary model, re-run `process <folder> --from summarize` on old meetings if you want.
 
-### Using PhoWhisper or a quantized whisper (experimental)
+### Using PhoWhisper or your own quantized whisper (experimental)
 
-`whisper_model` also accepts a local mlx-whisper directory. Convert a Hugging Face Whisper checkpoint (or quantize an existing mlx model) with the bundled script, then point the config at the output:
+`whisper_model` also accepts a local mlx-whisper directory (if that directory is missing, the pipeline warns and falls back to fp16 turbo). Convert a Hugging Face Whisper checkpoint (or quantize an existing mlx model) with the bundled script, then point the config at the output:
 
 ```bash
 cd pipeline
@@ -155,7 +156,7 @@ uv run python scripts/convert_phowhisper.py mlx-community/whisper-large-v3-turbo
 whisper_model = "/Users/you/meeting-notes/models/phowhisper-large-q8-mlx"   # or env MEETING_NOTES_WHISPER_MODEL
 ```
 
-PhoWhisper is **not** the default: in our benchmark it did not beat turbo on Vietnamese and handled English and code-switched terms much worse. Turbo q4 matched fp16 quality with about half the GPU memory. Numbers and method: `docs/research/phowhisper-mlx.md`. Benchmark a model with `uv run python tests/eval/asr_bench.py all <dir> new --model <path> --label <name>`.
+PhoWhisper is **not** the default: in our benchmark it did not beat turbo on Vietnamese and handled English and code-switched terms much worse. Turbo q4 matched fp16 quality with about half the GPU memory, so it is the default (the published `mlx-community/whisper-large-v3-turbo-q4` scored the same as our local conversion). Numbers and method: `docs/research/phowhisper-mlx.md`. Benchmark a model with `uv run python tests/eval/asr_bench.py all <dir> new --model <path> --label <name>`.
 
 Environment overrides: `MEETING_NOTES_OLLAMA_MODEL`, `MEETING_NOTES_WHISPER_MODEL`, `MEETING_NOTES_DIR`, `MEETING_NOTES_CONFIG`.
 

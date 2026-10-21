@@ -2,7 +2,7 @@
 
 Date: 2026-10-21. Question: should PhoWhisper (VinAI, Vietnamese fine-tune of Whisper) replace the default `mlx-community/whisper-large-v3-turbo`?
 
-**Recommendation: keep turbo as the default. Do not route vi blocks to PhoWhisper yet.** On our benchmark PhoWhisper did not beat turbo on Vietnamese and was much worse on English and code-switched speech. The test set is small and synthetic (see limits), so this is "no evidence to switch", not "PhoWhisper is bad". Quantizing turbo to q4 cost nothing measurable here and cuts peak MLX memory from 2.3 GB to 1.2 GB; that is the more useful finding.
+**Recommendation: keep turbo, quantized to 4 bits, as the default (`mlx-community/whisper-large-v3-turbo-q4`, adopted 2026-10-21). Do not route vi blocks to PhoWhisper yet.** On our benchmark PhoWhisper did not beat turbo on Vietnamese and was much worse on English and code-switched speech. The test set is small and synthetic (see limits), so this is "no evidence to switch", not "PhoWhisper is bad". Quantizing turbo to q4 cost nothing measurable here and cuts peak MLX memory from 2.3 GB to 1.2 GB; that is the more useful finding.
 
 ## Method
 
@@ -54,4 +54,4 @@ The machine ran out of swap, so the sweep was stopped at the coordinator's reque
 
 1. Re-run the skipped no-prompt and routed variants on a larger real vi meeting sample (human reference transcript), 10+ min of vi.
 2. Per-block routing would need pipeline code: `whisper_model` is one model today. Detection with turbo, vi blocks to PhoWhisper large q8 (1.5 GB, ~2.3 GB MLX) keeps English intact, at the cost of loading two models (~1.6 + 1.5 GB) or swapping them per block.
-3. Consider turbo q4 as the default for low-memory machines: same measured quality, 0.44 GB on disk, 1.24 GB peak MLX.
+3. Done: turbo q4 is the default. The published `mlx-community/whisper-large-v3-turbo-q4` (weights.npz, group size 64) loads with mlx-whisper 0.4.3 and scored the same as the local conversion on this corpus (WER all 0.065, vi 0.033, en 0.000, code-switch 0.163, CER code-switch 0.073 vs 0.071; peak MLX 1.24 GB). A missing local `whisper_model` path falls back to fp16 turbo with a warning.

@@ -10,13 +10,16 @@ from pathlib import Path
 CONFIG_PATH = Path(os.environ.get("MEETING_NOTES_CONFIG", "~/.config/meeting-notes/config.toml")).expanduser()
 # pipeline/src/meeting_notes/config.py -> repo root is three levels up from the package dir.
 REPO_ROOT = Path(__file__).resolve().parents[3]
+WHISPER_DEFAULT = "mlx-community/whisper-large-v3-turbo-q4"
+WHISPER_FALLBACK = "mlx-community/whisper-large-v3-turbo"  # fp16; used when a local model path is missing
 
 
 @dataclass
 class Config:
     notes_dir: str = "~/MeetingNotes"
-    # Transcription (mlx-whisper, Hugging Face repo id or local path).
-    whisper_model: str = "mlx-community/whisper-large-v3-turbo"
+    # Transcription (mlx-whisper, Hugging Face repo id or local path). Default: turbo quantized to 4 bits,
+    # same measured WER as fp16 at about half the GPU memory (docs/research/phowhisper-mlx.md).
+    whisper_model: str = WHISPER_DEFAULT
     # Allowed spoken languages (ISO 639-1). Detection is restricted to this set; empty = any language.
     languages: list[str] = field(default_factory=lambda: ["vi", "en"])
     initial_prompt: str = ""  # free-text hint prepended to the glossary in the whisper prompt
@@ -96,11 +99,28 @@ class Config:
         for env, attr in env_map.items():
             if os.environ.get(env):
                 setattr(cfg, attr, os.environ[env])
+        cfg.whisper_model = resolve_whisper_model(cfg.whisper_model)
         return cfg
 
     @property
     def notes_path(self) -> Path:
         return Path(self.notes_dir).expanduser()
+
+
+def resolve_whisper_model(name: str) -> str:
+    """Expand a local model path; fall back to fp16 turbo (with a warning) when that path does not exist.
+
+    Hugging Face repo ids ("owner/name") are returned unchanged and downloaded on first use."""
+    name = (name or "").strip() or WHISPER_DEFAULT
+    if not name.startswith(("/", "./", "../", "~")):
+        return name
+    path = Path(name).expanduser()
+    if path.is_dir() and (path / "config.json").exists():
+        return str(path)
+    import sys
+
+    print(f"whisper_model {name!r} not found; falling back to {WHISPER_FALLBACK}", file=sys.stderr)
+    return WHISPER_FALLBACK
 
 
 def glossary_entries(glossary: list[str] | str | None) -> list[tuple[str, str]]:

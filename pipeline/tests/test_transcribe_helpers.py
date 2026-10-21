@@ -155,3 +155,23 @@ def test_transcriber_caps_mlx_cache(monkeypatch):
     calls.clear()
     Transcriber(Config(mlx_cache_limit_mb=-1))._load()
     assert calls == []
+
+
+def test_whisper_default_is_turbo_q4_and_missing_local_path_falls_back(tmp_path, capsys):
+    from meeting_notes.config import WHISPER_FALLBACK, Config, resolve_whisper_model
+
+    assert Config().whisper_model == "mlx-community/whisper-large-v3-turbo-q4"
+    assert resolve_whisper_model("mlx-community/whisper-large-v3-mlx") == "mlx-community/whisper-large-v3-mlx"
+    assert resolve_whisper_model(str(tmp_path / "missing-q4-mlx")) == WHISPER_FALLBACK
+    assert "falling back" in capsys.readouterr().err
+    local = tmp_path / "turbo-q4"
+    local.mkdir()
+    (local / "config.json").write_text("{}")
+    assert resolve_whisper_model(str(local)) == str(local)
+
+
+def test_config_load_resolves_whisper_model(tmp_path, monkeypatch):
+    from meeting_notes.config import WHISPER_FALLBACK, Config
+
+    monkeypatch.setenv("MEETING_NOTES_WHISPER_MODEL", "~/definitely-missing-model-dir")
+    assert Config.load(tmp_path / "none.toml").whisper_model == WHISPER_FALLBACK
