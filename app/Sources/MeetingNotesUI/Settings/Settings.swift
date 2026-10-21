@@ -25,6 +25,7 @@ public enum Settings {
         public static let lastNotesFolder = "lastNotesFolder"
         public static let uiLanguage = "uiLanguage"
         public static let showRecordingPill = "showRecordingPill"
+        public static let liveTranscription = "liveTranscription"
     }
 
     private static var defaults: UserDefaults { .standard }
@@ -40,6 +41,7 @@ public enum Settings {
             Key.summaryModel: SummaryModel.light.rawValue,
             Key.autoStopSilenceMinutes: 15,
             Key.autoStopOnCallEnd: true,
+            Key.liveTranscription: false,
         ])
     }
 
@@ -136,6 +138,12 @@ public enum Settings {
     public static var autoStopOnCallEnd: Bool {
         get { defaults.bool(forKey: Key.autoStopOnCallEnd) }
         set { defaults.set(newValue, forKey: Key.autoStopOnCallEnd) }
+    }
+
+    /// Opt-in live transcript while recording (more memory/GPU while recording; notes stay complete).
+    public static var liveTranscription: Bool {
+        get { defaults.bool(forKey: Key.liveTranscription) }
+        set { defaults.set(newValue, forKey: Key.liveTranscription) }
     }
 
     public static var detectionSnoozeUntil: Date? {

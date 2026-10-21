@@ -7,11 +7,17 @@ import MeetingNotesUI
 /// stdin/stdout are JSON lines (see pipeline/src/meeting_notes/adapters/inbound/worker.py). stderr goes to the current
 /// job's `pipeline.app.log` (or `~/Library/Logs/MeetingNotes/worker.log` between jobs). The worker exits
 /// by itself after about a minute idle; the next job respawns it.
+///
+/// Owned by `AppController` and shared by `JobQueue` (process jobs) and `LiveTranscriber` (live jobs);
+/// the controller routes `onEvent` / `onTerminate` to both.
 @MainActor
 final class WorkerClient {
     var onEvent: ((WorkerEvent) -> Void)?
     /// The process ended (idle exit, crash or quit).
     var onTerminate: (() -> Void)?
+
+    /// Features from the current process's `ready` event (e.g. ["live"]); nil until it is ready.
+    private(set) var features: [String]?
 
     private var process: Process?
     private var stdin: FileHandle?
@@ -102,7 +108,10 @@ final class WorkerClient {
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self, self.generation == generation else { return }
-                    events.forEach { self.onEvent?($0) }
+                    for event in events {
+                        if case .worker("ready", _, let features) = event { self.features = features }
+                        self.onEvent?(event)
+                    }
                 }
             }
         }
@@ -129,6 +138,7 @@ final class WorkerClient {
         self.process = process
         stdin = input.fileHandleForWriting
         exiting = false
+        features = nil
     }
 
     private func detach() {
@@ -137,5 +147,6 @@ final class WorkerClient {
         stdin = nil
         environmentKey = nil
         exiting = false
+        features = nil
     }
 }

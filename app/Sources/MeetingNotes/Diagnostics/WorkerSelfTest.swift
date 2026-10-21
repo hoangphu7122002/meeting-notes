@@ -17,7 +17,10 @@ enum WorkerSelfTest {
             fputs("worker-test: timed out\n", stderr)
             exit(3)
         }
-        let jobs = JobQueue()
+        let worker = WorkerClient()
+        let jobs = JobQueue(worker: worker)
+        worker.onEvent = { jobs.handle($0) }
+        worker.onTerminate = { jobs.workerTerminated() }
         var remaining = folders.count
         var phase = 1
         var lastPercent = -1

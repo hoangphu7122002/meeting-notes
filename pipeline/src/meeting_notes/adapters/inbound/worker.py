@@ -6,9 +6,13 @@ so nothing stays resident while you work.
 
 Protocol: one JSON object per line.
   stdin  {"cmd": "warmup"} | {"cmd": "process", "job": "<id>", "folder": "...", "from": null, "force": false}
+         {"cmd": "live", "job": "live-<id>", "folder": "..."} | {"cmd": "live_stop", "job": "live-<id>"}
          {"cmd": "cancel"} | {"cmd": "release"} | {"cmd": "ping"} | {"cmd": "quit"}
-  stdout {"event": "worker", "status": "ready|warming|warm|released|busy", ...}
+  stdout {"event": "worker", "status": "ready|warming|warm|released|busy", ...} (ready carries "features": ["live"])
          pipeline events (see adapters/outbound/progress_reporter.py) tagged with "job", then {"event": "job_end", "job": id, "exit": 0|1|2|3}
+         live jobs: {"event": "live_segment", ...} / {"event": "live_status", ...}, then job_end
+A live job runs in the serial loop until live_stop (also implied by process, quit or EOF); it never releases the
+transcriber, so the Stop-time process job finds whisper warm.
 Exit codes per job: 0 ok, 1 failed, 2 bad request, 3 cancelled. EOF on stdin ends the worker.
 """
 
@@ -35,8 +39,11 @@ class Worker:
     """Serves the app's JSON-lines protocol. Models, reporters and processors come from entrypoints/wiring.py."""
 
     def __init__(self, make_models: Callable[..., ManagedModels], make_reporter: Callable[..., ProgressReporter],
-                 make_processor: Callable[..., object], load_config: Callable[[], Config] = Config.load):
+                 make_processor: Callable[..., object], load_config: Callable[[], Config] = Config.load,
+                 make_live: Callable[..., object] | None = None):
         self.make_models = make_models
+        self.make_live = make_live  # (folder, cfg, reporter, models) -> object with run(stop); None = no live feature
+        self.live_stops: dict[str, threading.Event] = {}  # live jobs received and not finished (guarded by lock)
         self.make_reporter = make_reporter
         self.make_processor = make_processor
         self.load_config = load_config
@@ -71,18 +78,35 @@ class Worker:
                     if self.inflight > 0:
                         self.cancel.set()
                 continue
+            if cmd.get("cmd") in ("live_stop", "process"):
+                self._stop_live(cmd.get("job") if cmd.get("cmd") == "live_stop" else None)  # a job never waits on live
+                if cmd.get("cmd") == "live_stop":
+                    continue
+            if cmd.get("cmd") == "live":
+                with self.lock:
+                    self.live_stops[str(cmd.get("job") or "live")] = threading.Event()
             if cmd.get("cmd") == "process":
                 with self.lock:
                     self.inflight += 1
             if cmd.get("cmd") == "ping":
                 self.send({"event": "pong", "busy": self.busy, "warm": self.models.loaded})
                 continue
+            if cmd.get("cmd") == "quit":
+                self._stop_live(None)
             self.commands.put(cmd)
+        self._stop_live(None)
         self.commands.put({"cmd": "quit"})
+
+    def _stop_live(self, job: str | None) -> None:
+        """live_stop for one live job, or for all of them (job None)."""
+        with self.lock:
+            for name, event in self.live_stops.items():
+                if job is None or name == job:
+                    event.set()
 
     def serve(self) -> int:
         threading.Thread(target=self._read_stdin, name="stdin", daemon=True).start()
-        self.send({"event": "worker", "status": "ready", "pid": os.getpid()})
+        self.send({"event": "worker", "status": "ready", "pid": os.getpid(), "features": ["live"] if self.make_live else []})
         while True:
             try:
                 cmd = self.commands.get(timeout=15)
@@ -101,6 +125,8 @@ class Worker:
                 self._warmup()
             elif name == "process":
                 self._process(cmd)
+            elif name == "live" and self.make_live:
+                self._live(cmd)
             else:
                 self.send({"event": "worker", "status": "error", "message": f"unknown command {name!r}"})
 
@@ -148,6 +174,34 @@ class Worker:
             self.busy = False
             self._finish_job()
             self.models.last_used = time.monotonic()
+        self.send({"event": "job_end", "job": job, "exit": code})
+
+    def _live(self, cmd: dict) -> None:
+        """Live transcription of a meeting being recorded, until live_stop."""
+        job = str(cmd.get("job") or "live")
+        with self.lock:
+            stop = self.live_stops.setdefault(job, threading.Event())
+        folder = Path(str(cmd.get("folder") or "")).expanduser()
+        code = 0
+        if not folder.is_dir():
+            self.send({"event": "error", "job": job, "message": f"Not a folder: {folder}"})
+            code = 2
+        else:
+            self.cfg = self.load_config()
+            self.models.update_config(self.cfg)
+            self.busy = True
+            reporter = self.make_reporter(json_mode=True, out=_Locked(self), job=job)
+            try:
+                self.make_live(folder, self.cfg, reporter, self.models).run(stop)
+            except Exception as exc:
+                print(redact(f"live job failed: {exc}"), file=sys.stderr, flush=True)
+                self.send({"event": "error", "job": job, "message": redact(f"Live transcription stopped: {exc}")})
+                code = 1
+            finally:
+                self.busy = False
+                self.models.last_used = time.monotonic()
+        with self.lock:
+            self.live_stops.pop(job, None)
         self.send({"event": "job_end", "job": job, "exit": code})
 
     def _finish_job(self) -> None:

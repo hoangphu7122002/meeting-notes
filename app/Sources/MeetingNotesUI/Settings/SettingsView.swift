@@ -16,6 +16,7 @@ public struct SettingsView: View {
     @State private var model = Settings.summaryModel
     @State private var silenceMinutes = Settings.autoStopSilenceMinutes
     @State private var stopOnCallEnd = Settings.autoStopOnCallEnd
+    @State private var liveTranscription = Settings.liveTranscription
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginStatus = LoginItem.statusText
     @State private var loginError: String?
@@ -59,6 +60,10 @@ public struct SettingsView: View {
                     .onChange(of: silenceMinutes) { _, value in Settings.autoStopSilenceMinutes = value }
                     Toggle(tr(.offerStopOnCallEnd), isOn: $stopOnCallEnd)
                         .onChange(of: stopOnCallEnd) { _, value in Settings.autoStopOnCallEnd = value }
+                    Toggle(tr(.liveTranscriptionToggle), isOn: $liveTranscription)
+                        .onChange(of: liveTranscription) { _, value in commands.setLiveTranscription(value) }
+                    Text(tr(.liveTranscriptionCaption)).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     LabeledContent(tr(.hotkeyStartStopLabel), value: state.hotkey?.display ?? tr(.hotkeyNone))
                     LabeledContent(tr(.hotkeyPauseLabel), value: state.pauseHotkey?.display ?? tr(.hotkeyNone))
                     if let error = state.hotkeyError { Text(error).foregroundStyle(.orange) }

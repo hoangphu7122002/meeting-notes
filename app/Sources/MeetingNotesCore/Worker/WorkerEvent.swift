@@ -2,7 +2,8 @@ import Foundation
 
 /// One stdout line of `meeting-notes worker` (see pipeline/src/meeting_notes/adapters/inbound/worker.py and adapters/outbound/progress_reporter.py).
 public enum WorkerEvent: Equatable, Sendable {
-    case worker(status: String, message: String?)
+    /// `features` comes with the `ready` status (e.g. ["live"]); empty for older workers and other statuses.
+    case worker(status: String, message: String?, features: [String] = [])
     case stage(job: String?, stage: String, status: String, elapsedSec: Double?, etaSec: Double?, overall: Double?, message: String?)
     case progress(job: String?, stage: String?, fraction: Double, overall: Double?, etaSec: Double?, message: String?)
     case warning(job: String?, message: String)
@@ -12,6 +13,8 @@ public enum WorkerEvent: Equatable, Sendable {
     case done(job: String?, folder: String, notes: String, title: String?, totalSec: Double?)
     case jobEnd(job: String?, exit: Int)
     case pong(busy: Bool)
+    case liveSegment(job: String?, LiveSegment)
+    case liveStatus(job: String?, LiveStatus)
     case other(String)
 
     public init?(line: String) {
@@ -27,7 +30,7 @@ public enum WorkerEvent: Equatable, Sendable {
         let message = string("message").flatMap { $0.isEmpty ? nil : $0 }
         switch kind {
         case "worker":
-            self = .worker(status: string("status") ?? "", message: message)
+            self = .worker(status: string("status") ?? "", message: message, features: (object["features"] as? [String]) ?? [])
         case "stage":
             guard let stage = string("stage") else { return nil }
             self = .stage(job: job, stage: stage, status: string("status") ?? "", elapsedSec: number("elapsed_sec"),
@@ -52,6 +55,12 @@ public enum WorkerEvent: Equatable, Sendable {
             self = .jobEnd(job: job, exit: (object["exit"] as? NSNumber)?.intValue ?? 1)
         case "pong":
             self = .pong(busy: (object["busy"] as? Bool) ?? false)
+        case "live_segment":
+            guard let segment = LiveSegment(object: object) else { return nil }
+            self = .liveSegment(job: job, segment)
+        case "live_status":
+            guard let status = LiveStatus(object: object) else { return nil }
+            self = .liveStatus(job: job, status)
         default:
             self = .other(kind)
         }
@@ -60,7 +69,8 @@ public enum WorkerEvent: Equatable, Sendable {
     public var job: String? {
         switch self {
         case .stage(let job, _, _, _, _, _, _), .progress(let job, _, _, _, _, _), .warning(let job, _), .error(let job, _),
-             .partial(let job, _, _), .cancelled(let job, _), .done(let job, _, _, _, _), .jobEnd(let job, _):
+             .partial(let job, _, _), .cancelled(let job, _), .done(let job, _, _, _, _), .jobEnd(let job, _),
+             .liveSegment(let job, _), .liveStatus(let job, _):
             return job
         case .worker, .pong, .other:
             return nil
@@ -73,6 +83,16 @@ public enum WorkerEvent: Equatable, Sendable {
             var object: [String: Any] = ["cmd": "process", "job": job, "folder": folder]
             if let stage { object["from"] = stage }
             return line(object)
+        }
+
+        /// Starts the live transcript of a recording folder (only if the worker's `ready` listed "live").
+        public static func live(job: String, folder: String) -> String {
+            line(["cmd": "live", "job": job, "folder": folder])
+        }
+
+        /// Asks the live job to finish its current chunk and end.
+        public static func liveStop(job: String) -> String {
+            line(["cmd": "live_stop", "job": job])
         }
 
         public static let cancel = line(["cmd": "cancel"])
@@ -207,7 +227,7 @@ public struct ProcessingSnapshot: Equatable, Sendable {
             }
         case let .cancelled(_, folder):
             if let folder { self.folder = folder }
-        case .jobEnd, .worker, .pong, .other:
+        case .jobEnd, .worker, .pong, .liveSegment, .liveStatus, .other:
             break
         }
         return self != before

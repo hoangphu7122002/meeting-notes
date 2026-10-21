@@ -28,6 +28,8 @@ public final class AppState: ObservableObject {
     @Published public var audioTest = AudioTestState()
     @Published public var showGettingStarted = false
     @Published public var isBundled = AppInfo.isBundled
+    /// Live transcript of the recording in progress; nil = live transcription off or unavailable (hidden).
+    @Published public var liveTranscript: LiveTranscript?
 
     public let clock = ClockModel()
     public let levels = LevelModel()

@@ -87,7 +87,7 @@ def make_live(folder: Path, cfg: Config, reporter: ProgressReporter, models: Man
 
 
 def make_worker() -> Worker:
-    return Worker(make_models=make_models, make_reporter=make_reporter, make_processor=make_processor)
+    return Worker(make_models=make_models, make_reporter=make_reporter, make_processor=make_processor, make_live=make_live)
 
 
 def import_audio(src: Path, notes_dir: Path, title: str | None = None) -> Path:

@@ -84,6 +84,57 @@ struct WorkerEventTests {
     }
 }
 
+@Suite("Live worker events")
+struct LiveWorkerEventTests {
+    @Test func readyFeatures() {
+        #expect(WorkerEvent(line: #"{"event": "worker", "status": "ready", "pid": 123, "features": ["live"]}"#)
+            == .worker(status: "ready", message: nil, features: ["live"]))
+        // Older workers: no features key.
+        #expect(WorkerEvent(line: #"{"event": "worker", "status": "ready", "pid": 123}"#) == .worker(status: "ready", message: nil, features: []))
+        #expect(WorkerEvent(line: #"{"event": "worker", "status": "error", "message": "unknown command 'live'"}"#)
+            == .worker(status: "error", message: "unknown command 'live'"))
+    }
+
+    @Test func liveSegment() {
+        let line = #"{"event": "live_segment", "job": "live-1", "track": "mic", "speaker": "Me", "seq": 3, "start": 12.34, "end": 15.0, "language": "vi", "text": "Xin chào"}"#
+        let event = WorkerEvent(line: line)
+        #expect(event == .liveSegment(job: "live-1", LiveSegment(track: "mic", speaker: "Me", seq: 3, start: 12.34, end: 15,
+                                                                 language: "vi", text: "Xin chào")))
+        #expect(event?.job == "live-1")
+        if case let .liveSegment(_, segment)? = event { #expect(segment.isMe) } else { Issue.record("not a live segment") }
+        #expect(WorkerEvent(line: #"{"event": "live_segment", "job": "live-1", "text": "no track"}"#) == nil)
+    }
+
+    @Test func liveStatus() {
+        let event = WorkerEvent(line: #"{"event": "live_status", "job": "live-1", "state": "throttled", "backlog_sec": 12.3, "skipped_sec": 4.0, "rtf": 0.21, "reason": "battery"}"#)
+        let status = LiveStatus(state: "throttled", backlogSec: 12.3, skippedSec: 4, rtf: 0.21, reason: "battery")
+        #expect(event == .liveStatus(job: "live-1", status))
+        #expect(status.isPaused)
+        let running = WorkerEvent(line: #"{"event": "live_status", "job": "live-1", "state": "running", "backlog_sec": 0, "skipped_sec": 0.0, "rtf": 0.2, "reason": null}"#)
+        #expect(running == .liveStatus(job: "live-1", LiveStatus(state: "running", backlogSec: 0, skippedSec: 0, rtf: 0.2, reason: nil)))
+        #expect(LiveStatus(state: "deferred").isPaused)
+        #expect(!LiveStatus(state: "running").isPaused)
+        #expect(LiveStatus(state: "stopped").isStopped)
+    }
+
+    @Test func liveEventsDoNotTouchProcessing() {
+        var snapshot = ProcessingSnapshot(job: "live-1", folder: "/f", title: "t")
+        let segment = WorkerEvent.liveSegment(job: "live-1", LiveSegment(track: "system", speaker: "Others", seq: 0, start: 0, end: 1, text: "x"))
+        check(!snapshot.apply(segment))
+        check(!snapshot.apply(.liveStatus(job: "live-1", LiveStatus(state: "running"))))
+    }
+
+    @Test func unknownEventsStayOther() {
+        #expect(WorkerEvent(line: #"{"event": "live_caption", "job": "live-1"}"#) == .other("live_caption"))
+    }
+
+    @Test func liveCommands() {
+        #expect(WorkerEvent.Command.live(job: "live-1", folder: "/n/2026 a/b")
+            == #"{"cmd":"live","folder":"/n/2026 a/b","job":"live-1"}"# + "\n")
+        #expect(WorkerEvent.Command.liveStop(job: "live-1") == #"{"cmd":"live_stop","job":"live-1"}"# + "\n")
+    }
+}
+
 @Suite("Notes document")
 struct NotesDocumentTests {
     @Test func groupsParagraphsAndPauses() throws {

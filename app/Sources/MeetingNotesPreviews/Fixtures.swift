@@ -36,6 +36,7 @@ final class NoCommands: AppCommands {
     func setDetectionEnabled(_ enabled: Bool) {}
     func setCreateNotesMode(_ mode: CreateNotesMode) {}
     func setSummaryModel(_ model: SummaryModel) {}
+    func setLiveTranscription(_ enabled: Bool) {}
     func chooseNotesFolder() {}
     func resetNotesFolder() {}
     func setShowInDock(_ show: Bool) {}
@@ -45,6 +46,7 @@ final class NoCommands: AppCommands {
 
 enum Scenario: String, CaseIterable {
     case idle, firstLaunch = "first-launch", recording, recordingWarning = "recording-warning", paused
+    case recordingLive = "recording-live", liveListening = "recording-live-listening"
     case discardConfirm = "discard-confirm", processing, ready, error
 }
 
@@ -102,6 +104,25 @@ enum Fixtures {
         return snapshot
     }
 
+    static func liveTranscript(_ lang: UILanguage, paused: Bool) -> LiveTranscript {
+        let vi = lang == .vi
+        var transcript = LiveTranscript(job: "live-preview")
+        let lines: [(String, Int, Double, String)] = [
+            ("system", 7, 101, vi ? "Bản thiết kế màn hình thanh toán đã xong phần lớn rồi." : "The checkout screen design is mostly done."),
+            ("mic", 5, 104.5, vi ? "Vậy mình chốt ngày ra mắt là thứ Sáu tuần sau nhé, nếu đội kỹ thuật kịp kiểm thử."
+                : "So let's lock the launch for next Friday, if engineering can finish testing in time."),
+            ("system", 8, 109, vi ? "Được, bên mình sẽ gửi bản kiểm thử vào thứ Tư." : "Sure, we'll send the test build on Wednesday."),
+        ]
+        for (track, seq, start, text) in lines {
+            transcript.insert(LiveSegment(track: track, speaker: track == "mic" ? "Me" : "Others", seq: seq, start: start,
+                                          end: start + 3, language: lang.rawValue, text: text))
+        }
+        if paused, let event = WorkerEvent(line: #"{"event":"live_status","job":"live-preview","state":"deferred","backlog_sec":24,"reason":"memory"}"#) {
+            transcript.apply(event)
+        }
+        return transcript
+    }
+
     static func state(_ scenario: Scenario, _ lang: UILanguage) -> AppState {
         let state = AppState(notesDir: notesDir, createNotesMode: .rightAway)
         state.isBundled = true
@@ -125,7 +146,7 @@ enum Fixtures {
             state.recents = []
             state.lastResult = nil
             state.pill = .idle(attention: true)
-        case .recording, .recordingWarning, .discardConfirm:
+        case .recording, .recordingWarning, .discardConfirm, .recordingLive, .liveListening:
             state.machine = RecorderMachine(phase: .recording)
             state.pill = .recording
             state.titleDraft = longTitle(lang)
@@ -139,6 +160,8 @@ enum Fixtures {
                     ? "Người dùng đã từ chối quyền ghi màn hình và âm thanh hệ thống cho ứng dụng"
                     : "The user declined TCCs for application, window, display capture")]
             }
+            if scenario == .recordingLive { state.liveTranscript = liveTranscript(lang, paused: true) }
+            if scenario == .liveListening { state.liveTranscript = LiveTranscript(job: "live-preview") }
             if scenario == .discardConfirm {
                 var machine = RecorderMachine(phase: .recording)
                 _ = machine.handle(.requestDiscard)

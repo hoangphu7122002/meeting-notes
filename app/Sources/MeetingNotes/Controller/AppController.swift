@@ -60,7 +60,12 @@ final class AppController {
 
     var clock: ClockModel { state.clock }
     var levels: LevelModel { state.levels }
-    let jobs = JobQueue()
+    /// The pipeline worker, shared by processing jobs and the live transcript.
+    let worker = WorkerClient()
+    let jobs: JobQueue
+    let live: LiveTranscriber
+    /// Pending delayed start of the live transcript.
+    var liveStartWork: DispatchWorkItem?
     let detector = MeetingDetector()
     let notifier = Notifier()
     weak var ui: UIPresenter?
@@ -94,9 +99,15 @@ final class AppController {
     var recordingFolder: URL? { session?.folder }
     var isCapturing: Bool { machine.phase != .idle }
 
+    init() {
+        jobs = JobQueue(worker: worker)
+        live = LiveTranscriber(worker: worker)
+    }
+
     // MARK: - Lifecycle
 
     func launch() {
+        setupWorkerRouting()
         notifier.setup()
         notifier.onOpenNotes = { [weak self] folder in self?.ui?.openNotes(folder) }
         jobs.onChange = { [weak self] in self?.refresh() }

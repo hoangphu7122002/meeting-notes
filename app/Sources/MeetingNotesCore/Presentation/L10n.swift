@@ -98,7 +98,7 @@ public enum Tr: String, CaseIterable, Sendable {
     case relaunchBlocked, gettingStartedHeading, gettingStarted1, gettingStarted2, gettingStarted3
     case audioTestHeading, audioTestHint, testStopFirst, testMeOK, testMeSilent, testMeError, testThemOK
     case testThemSilent, testThemNotPermitted, micAccessDenied, readyHeading, notesFolder, waitingHeading
-    case recentDuration, notificationBody
+    case recentDuration, notificationBody, liveHeading, liveListening, livePaused
 
     // Meeting status (recents)
     case meetingReady, meetingProcessing, meetingProcessingPercent, meetingQueued, meetingRecording, meetingFailed
@@ -136,6 +136,7 @@ public enum Tr: String, CaseIterable, Sendable {
     case hotkeyPauseLabel, hotkeyNone, hotkeyChangeHint, createNotesLabel, modeRightAway, modeWhenIdle, modeManual
     case summaryModelLabel, modelLight, modelBetter, showInDock, showPillRecording, showPillIdle, launchAtLogin
     case loginItemStatus, loginEnabled, loginNeedsApproval, loginOff, loginUnavailable, loginUnknown, version
+    case liveTranscriptionToggle, liveTranscriptionCaption
 
     // Notes viewer
     case summaryInProgress, noNotes, searchTranscript, summaryHeading, decisionsHeading, actionItemsHeading
@@ -293,6 +294,9 @@ public enum Tr: String, CaseIterable, Sendable {
         case .waitingHeading: return ("Đang chờ", "Waiting")
         case .recentDuration: return ("%1 · %2", "%1 · %2")
         case .notificationBody: return ("Bấm để mở ghi chú.", "Click to open the notes.")
+        case .liveHeading: return ("Chép lời trực tiếp", "Live transcript")
+        case .liveListening: return ("Đang nghe…", "Listening…")
+        case .livePaused: return ("Chép lời trực tiếp tạm dừng – ghi chú vẫn đầy đủ", "Live transcript paused – notes will still be complete")
 
         case .meetingReady: return ("Có ghi chú", "Ready")
         case .meetingProcessing: return ("Đang xử lý", "Processing")
@@ -420,6 +424,10 @@ public enum Tr: String, CaseIterable, Sendable {
         case .loginUnavailable: return ("Không khả dụng (hãy chạy bản đã cài trong ~/Applications)", "Unavailable (run the installed app from ~/Applications)")
         case .loginUnknown: return ("Không rõ", "Unknown")
         case .version: return ("Phiên bản", "Version")
+        case .liveTranscriptionToggle: return ("Chép lời trực tiếp khi đang ghi", "Live transcript while recording")
+        case .liveTranscriptionCaption:
+            return ("Hiện lời thoại ngay trong cuộc họp. Tốn thêm bộ nhớ và GPU khi đang ghi; ghi chú sau cuộc họp vẫn đầy đủ như thường.",
+                    "Shows what is said during the meeting. Uses more memory and GPU while recording; the notes afterwards are still complete.")
 
         case .summaryInProgress: return ("Đang tóm tắt…", "Summary in progress…")
         case .noNotes: return ("Chưa có ghi chú.", "No notes yet.")

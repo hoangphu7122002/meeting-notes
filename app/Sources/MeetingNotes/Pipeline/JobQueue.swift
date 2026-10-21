@@ -27,7 +27,7 @@ final class JobQueue {
     private(set) var queued: [Job] = []
     private var snapshot: ProcessingSnapshot?
     private var waitingReason: String?
-    private let worker = WorkerClient()
+    private let worker: WorkerClient
     private var gateTimer: Timer?
     private var publishScheduled = false
     private var doneEvent: WorkerEvent?
@@ -39,9 +39,9 @@ final class JobQueue {
         didSet { if !recordingActive && oldValue { pump() } }
     }
 
-    init() {
-        worker.onEvent = { [weak self] in self?.handle($0) }
-        worker.onTerminate = { [weak self] in self?.workerTerminated() }
+    /// The shared worker; its owner routes non-live events to `handle(_:)` and termination to `workerTerminated()`.
+    init(worker: WorkerClient) {
+        self.worker = worker
     }
 
     /// The job shown in the UI: the running one, or the next one while it waits.
@@ -166,8 +166,8 @@ final class JobQueue {
         publishNow()
     }
 
-    private func handle(_ event: WorkerEvent) {
-        if case .worker(let status, _) = event {
+    func handle(_ event: WorkerEvent) {
+        if case .worker(let status, _, _) = event {
             if status == "exit" { worker.markExiting() }
             return
         }
@@ -191,7 +191,7 @@ final class JobQueue {
         if snapshot?.apply(event) == true { schedulePublish() }
     }
 
-    private func workerTerminated() {
+    func workerTerminated() {
         guard let job = current else {
             pump()
             return

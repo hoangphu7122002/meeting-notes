@@ -80,6 +80,7 @@ extension AppController {
                 detector.watch(Settings.autoStopOnCallEnd ? app : nil)
                 clock.elapsed = Format.elapsed(0)
                 startTicker()
+                startLiveSoon(folder: created)
                 if source.showsToast { ui?.showToast(tr(.toastRecordingStarted)) }
             } catch {
                 if let folder { MeetingFolders.removeIfEmpty(folder) }
@@ -96,6 +97,7 @@ extension AppController {
     }
 
     private func finishRecording() {
+        stopLive()  // before the stop/enqueue work, so the Stop-time job reuses the warm worker
         guard let session else {
             machine.apply(.finished)
             return
@@ -124,6 +126,7 @@ extension AppController {
     }
 
     private func discardRecording() {
+        stopLive()
         guard let session else {
             machine.apply(.finished)
             return
