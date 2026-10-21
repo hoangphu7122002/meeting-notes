@@ -248,6 +248,8 @@ reference transcripts, as planned in `speed-memory.md` section 5. Metrics via `p
 | T4 | Stop-time reuse (gates A) | full `process` with and without partials | ambiguous (re-decoded) system speech < 15 %; final WER within 0.5 pp of no-reuse run; post-Stop wall time for 1 h ≤ 50 % of today |
 | T5 | Apple SpeechTranscriber (later) | on macOS 26 only: print `SpeechTranscriber.supportedLocales`, test vi_VN on 2 min | informational; revisit B if vi is supported |
 
+Results of T3 and T4 (offline replay, provisional): [`realtime-feasibility.md`](realtime-feasibility.md).
+
 Order: T3 and T4 need no call (cheap, offline replay); T2 decides whether A can run during calls at all;
 T1 only if captions are still wanted after A ships.
 
