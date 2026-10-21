@@ -1,9 +1,9 @@
+// Floating pill panel controller (Presentation).
+
 import AppKit
 import MeetingNotesCore
 import MeetingNotesUI
 import SwiftUI
-
-// MARK: - Pill window
 
 /// The bottom-center pill: sizing, positioning, dragging, hover expand/collapse, visibility, meters.
 ///
@@ -243,124 +243,5 @@ final class PillWindowController {
 
     private func updateMeters() {
         controller.setMeterVisible("pill", panel.isVisible && panel.occlusionState.contains(.visible))
-    }
-}
-
-// MARK: - Toast
-
-/// Brief message above the pill (~1.5 s, one fade, no loops).
-@MainActor
-final class ToastPanel {
-    private let panel = FloatingPanel()
-    private let model = ToastModel()
-    private var hosting: FittingHostingView<ToastView>!
-    private var hideWork: DispatchWorkItem?
-    private var anchorFrame: NSRect = .zero
-
-    init() {
-        panel.ignoresMouseEvents = true
-        hosting = FittingHostingView(rootView: ToastView(model: model, sizeChanged: { [weak self] _ in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.place() } }
-        }))
-        panel.contentView = hosting
-    }
-
-    func show(_ text: String, above frame: NSRect) {
-        anchorFrame = frame
-        model.text = text
-        place()
-        panel.alphaValue = 1
-        panel.orderFrontRegardless()
-        // The new text is laid out in the next update pass; re-fit after it.
-        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.place() } }
-        hideWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                NSAnimationContext.runAnimationGroup({ context in
-                    context.duration = 0.2
-                    self.panel.animator().alphaValue = 0
-                }, completionHandler: {
-                    MainActor.assumeIsolated { if self.panel.alphaValue == 0 { self.panel.orderOut(nil) } }
-                })
-            }
-        }
-        hideWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8, execute: work)
-    }
-
-    private func place() {
-        let size = hosting.fittedSize
-        let anchor = CGPoint(x: anchorFrame.midX, y: anchorFrame.maxY + 8)
-        let screen = NSScreen.screens.first { $0.frame.contains(CGPoint(x: anchorFrame.midX, y: anchorFrame.minY)) } ?? NSScreen.main
-        let frame = PillLayout.frame(size: size, anchor: anchor, visible: screen?.visibleFrame)
-        if panel.frame != frame {
-            panel.setFrame(frame, display: true)
-            panel.invalidateShadow()
-        }
-    }
-}
-
-// MARK: - Cards (meeting detected, auto-stop)
-
-/// Small floating card at the top-right of the screen or above the pill.
-@MainActor
-final class CardPanel {
-    enum Placement {
-        case topRight
-        case above(NSRect)
-    }
-
-    private let panel = FloatingPanel(size: CGSize(width: 340, height: 120))
-    private var placement = Placement.topRight
-    private var fittedSize: () -> CGSize = { CGSize(width: 340, height: 120) }
-
-    var isVisible: Bool { panel.isVisible }
-
-    /// `make` builds the card with the size callback to wire into its `onFittingSizeChange`.
-    func show<Content: View>(_ make: (@escaping (CGSize) -> Void) -> Content, placement: Placement) {
-        self.placement = placement
-        let content = make { [weak self] _ in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.place() } }
-        }
-        let hosting = FittingHostingView(rootView: content)
-        fittedSize = { [weak hosting] in hosting?.fittedSize ?? CGSize(width: 340, height: 120) }
-        panel.contentView = hosting
-        place()
-        panel.orderFrontRegardless()
-    }
-
-    func move(to placement: Placement) {
-        self.placement = placement
-        place()
-    }
-
-    func hide() {
-        guard panel.isVisible else { return }
-        panel.orderOut(nil)
-        // Release the content later: hide() usually runs inside one of its own button actions.
-        DispatchQueue.main.async { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, !self.panel.isVisible else { return }
-                self.panel.contentView = nil
-                self.fittedSize = { CGSize(width: 340, height: 120) }
-            }
-        }
-    }
-
-    private func place() {
-        let size = fittedSize()
-        let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let frame: CGRect
-        switch placement {
-        case .topRight:
-            frame = CGRect(x: visible.maxX - size.width - 16, y: visible.maxY - size.height - 16, width: size.width, height: size.height)
-        case .above(let pill):
-            frame = PillLayout.frame(size: size, anchor: CGPoint(x: pill.midX, y: pill.maxY + 10), visible: visible)
-        }
-        if panel.frame != frame {
-            panel.setFrame(frame, display: true)
-            panel.invalidateShadow()
-        }
     }
 }

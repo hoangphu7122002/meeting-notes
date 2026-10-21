@@ -1,38 +1,5 @@
 import Foundation
 import MeetingNotesCore
-import ServiceManagement
-
-public struct AppError: LocalizedError {
-    public let message: String
-    public init(_ message: String) { self.message = message }
-    public var errorDescription: String? { message }
-}
-
-public enum AppInfo {
-    public static let bundleID = "com.hoangphu.meetingnotes"
-
-    public static var info: [String: Any] { Bundle.main.infoDictionary ?? [:] }
-
-    public static var versionString: String {
-        let version = info["CFBundleShortVersionString"] as? String ?? "dev"
-        let build = info["CFBundleVersion"] as? String ?? "0"
-        return "\(version) (\(build))"
-    }
-
-    /// True when running from the assembled .app bundle (needed for notifications and login items).
-    public static var isBundled: Bool { Bundle.main.bundleIdentifier != nil && Bundle.main.bundlePath.hasSuffix(".app") }
-
-    public static var supportDir: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/MeetingNotes", isDirectory: true)
-    }
-
-    public static var stateFile: URL { supportDir.appendingPathComponent("state.json") }
-
-    public static var logsDir: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/MeetingNotes", isDirectory: true)
-    }
-}
 
 /// User preferences in `UserDefaults` (domain `com.hoangphu.meetingnotes`).
 public enum Settings {
@@ -211,30 +178,5 @@ public enum Settings {
     private static func nonEmpty(_ value: String?) -> String? {
         guard let value, !value.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
         return value
-    }
-}
-
-public enum LoginItem {
-    public static var isEnabled: Bool {
-        let status = SMAppService.mainApp.status
-        return status == .enabled || status == .requiresApproval
-    }
-
-    public static var statusText: String {
-        switch SMAppService.mainApp.status {
-        case .enabled: return tr(.loginEnabled)
-        case .requiresApproval: return tr(.loginNeedsApproval)
-        case .notRegistered: return tr(.loginOff)
-        case .notFound: return tr(.loginUnavailable)
-        @unknown default: return tr(.loginUnknown)
-        }
-    }
-
-    public static func set(_ enabled: Bool) throws {
-        if enabled {
-            try SMAppService.mainApp.register()
-        } else {
-            try SMAppService.mainApp.unregister()
-        }
     }
 }
