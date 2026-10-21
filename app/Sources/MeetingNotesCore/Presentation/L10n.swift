@@ -1,3 +1,6 @@
+// Localization: `Tr` is the key enum (every user-visible string), `L10n` holds the vi/en table and fills
+// placeholders, `tr(_:)` looks a key up in the current (or an explicit) UI language.
+
 import Foundation
 
 /// UI language (UserDefaults key `uiLanguage`). Vietnamese is the default.
