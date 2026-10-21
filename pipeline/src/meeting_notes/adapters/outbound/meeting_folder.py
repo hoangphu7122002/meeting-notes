@@ -121,3 +121,27 @@ class MeetingStore:
 
     def copy_file(self, src: Path, dest: Path) -> None:
         shutil.copy2(src, dest)
+
+    def exists(self, path: Path) -> bool:
+        return path.exists()
+
+    def mkdir(self, path: Path) -> None:
+        path.mkdir(parents=True, exist_ok=True)
+
+    def write_text(self, path: Path, text: str) -> None:
+        path.write_text(text, encoding="utf-8")
+
+    def unlink(self, path: Path) -> None:
+        path.unlink(missing_ok=True)
+
+    def rename(self, src: Path, dest: Path) -> None:
+        src.rename(dest)
+
+    def size(self, path: Path) -> int:
+        return path.stat().st_size
+
+    def mtime(self, path: Path) -> float:
+        return path.stat().st_mtime
+
+    def glob(self, folder: Path, pattern: str) -> list[Path]:
+        return sorted(folder.glob(pattern))

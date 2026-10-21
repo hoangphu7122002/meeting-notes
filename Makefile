@@ -41,3 +41,4 @@ ci: lint test ## lint + test
 clean: ## Remove build outputs (never models/)
 	rm -rf build app/.build
 	find pipeline -name __pycache__ -type d -prune -exec rm -rf {} +
+	find pipeline \( -name '*.pyc' -o -name '*.pyo' \) -type f -delete

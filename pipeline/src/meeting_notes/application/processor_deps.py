@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from ..config import Config
-from .ports import AudioIO, MeetingStore, ModelProvider
+from .ports import AudioIO, MeetingStore, ModelProvider, Summarizer
 from .transcribe_blocks import transcribe_blocks
 
 
@@ -17,6 +17,6 @@ class ProcessorDeps:
     store: MeetingStore
     audio: AudioIO
     make_models: Callable[[Config, bool, Callable[[str], None]], ModelProvider]  # (cfg, keep, log)
-    summarize: Callable[..., dict]  # (lines, language, cfg, progress=None, template=None) -> notes
+    summarize: Summarizer
     preload: Callable[[Config], object]  # start loading the summary model in the background
     transcribe_blocks: Callable[..., list] = transcribe_blocks

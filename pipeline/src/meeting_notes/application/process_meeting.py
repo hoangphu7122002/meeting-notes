@@ -54,7 +54,7 @@ class Processor:
         status = self.store.read_json(self.m.file("status.json")) or {}
         if status.get("state") == "running" and status.get("pid") not in (None, os.getpid()) and self.store.pid_alive(int(status["pid"])):
             raise PipelineError(f"Already being processed by pid {status['pid']}")
-        self.m.work.mkdir(exist_ok=True)
+        self.store.mkdir(self.m.work)
         self.forced = set(STAGES[STAGES.index(from_stage):]) if from_stage else set()
         self._status("running")
         self.r.audio_sec = self._audio_duration()
@@ -87,18 +87,18 @@ class Processor:
             value = (self.store.read_json(source) or {}).get("duration_sec")
             if value:
                 return float(value)
-        value = self.m.meeting.get("duration_sec") if self.m.file("meeting.json").exists() else None
+        value = self.m.meeting.get("duration_sec") if self.store.exists(self.m.file("meeting.json")) else None
         return float(value) if value else None
 
     def _will_summarize(self) -> bool:
-        return "summarize" in self.forced or not (self.m.work / "summary.json").exists()
+        return "summarize" in self.forced or not self.store.exists(self.m.work / "summary.json")
 
     def _render_partial(self) -> None:
         """Write notes.md with the transcript right away; the summary follows."""
         transcript = self.store.read_json(self.m.file("transcript.json")) or {}
         if not transcript.get("segments"):
             return
-        self.m.file("notes.md").write_text(render_notes(self.m.meeting, transcript, None, pending=True), encoding="utf-8")
+        self.store.write_text(self.m.file("notes.md"), render_notes(self.m.meeting, transcript, None, pending=True))
         self.r.partial(self.m.path, self.m.file("notes.md"))
 
     def _status(self, state: str, **extra) -> None:
@@ -111,7 +111,7 @@ class Processor:
         self.r.warning(message)
 
     def _skip(self, stage: str, output: Path, force: bool) -> bool:
-        if output.exists() and not force:
+        if self.store.exists(output) and not force:
             self.r.stage_end(stage, "skipped", f"{output.name} exists")
             return True
         self.r.stage_start(stage)
@@ -122,14 +122,14 @@ class Processor:
     def stage_prepare(self, force: bool) -> None:
         marker = self.m.work / "prepare.json"
         needs_audio = bool(self.forced & {"diarize", "transcribe"}) or not (
-            (self.m.work / "diarization.json").exists() and self.m.file("transcript.json").exists()
+            self.store.exists(self.m.work / "diarization.json") and self.store.exists(self.m.file("transcript.json"))
         )
         if not force and not needs_audio:
             self.r.stage_end("prepare", "skipped", "transcript exists")
             return
         sources = self.m.track_sources()
         names = sorted(sources)
-        if marker.exists() and not force and all((self.m.work / f"{n}.16k.wav").exists() for n in names):
+        if self.store.exists(marker) and not force and all(self.store.exists(self.m.work / f"{n}.16k.wav") for n in names):
             self.r.stage_end("prepare", "skipped", "audio ready")
             return
         self.r.stage_start("prepare", "Decoding audio")
@@ -146,13 +146,13 @@ class Processor:
         if len(sources) > 1:
             for name, (path, offset) in sources.items():
                 dest = self.m.file(f"{name}.m4a")
-                if path != dest and (force or not dest.exists()):
+                if path != dest and (force or not self.store.exists(dest)):
                     self.audio.encode_m4a([(path, offset)], dest)
-            if force or not self.m.file("mixed.m4a").exists():
+            if force or not self.store.exists(self.m.file("mixed.m4a")):
                 self.audio.encode_m4a(list(sources.values()), self.m.file("mixed.m4a"))
         else:
             (path, offset), = sources.values()
-            if path != self.m.file("mixed.m4a") and (force or not self.m.file("mixed.m4a").exists()):
+            if path != self.m.file("mixed.m4a") and (force or not self.store.exists(self.m.file("mixed.m4a"))):
                 self.audio.encode_m4a([(path, offset)], self.m.file("mixed.m4a"))
         self.store.write_json(marker, {"tracks": names, "duration_sec": round(length / SR, 2)})
         self.r.audio_sec = length / SR
@@ -238,7 +238,7 @@ class Processor:
             return
         notes["model"] = self.cfg.ollama_model
         self.store.write_json(out, notes)
-        (self.m.work / "summary.error.json").unlink(missing_ok=True)
+        self.store.unlink(self.m.work / "summary.error.json")
         self.r.stage_end("summarize", message=notes.get("title", ""))
 
     def stage_render(self, force: bool) -> None:
@@ -250,7 +250,7 @@ class Processor:
         if summary and summary.get("title") and meeting.get("title_source", "default") in DEFAULT_TITLES:
             transcript["title"] = summary["title"]
             self.store.write_json(self.m.file("transcript.json"), transcript)
-        self.m.file("notes.md").write_text(render_notes(meeting, transcript, summary, error), encoding="utf-8")
+        self.store.write_text(self.m.file("notes.md"), render_notes(meeting, transcript, summary, error))
         self.r.stage_end("render", message="notes.md written")
 
     def stage_finalize(self, force: bool) -> None:
@@ -263,14 +263,14 @@ class Processor:
                 raw = self.m.file(info["file"])
                 m4a = self.m.file(f"{name}.m4a") if len(sources) > 1 else self.m.file("mixed.m4a")
                 disposable = raw.suffix.lower() == ".wav" or raw.name.startswith("source.")
-                if disposable and raw != m4a and raw.exists() and m4a.exists() and m4a.stat().st_size > 0:
-                    raw.unlink()
+                if disposable and raw != m4a and self.store.exists(raw) and self.store.exists(m4a) and self.store.size(m4a) > 0:
+                    self.store.unlink(raw)
                     info["file"] = m4a.name
                     info["start_offset_sec"] = 0.0
             self.store.write_json(self.m.file("meeting.json"), meeting)
-            for p in self.m.work.glob("*.16k.wav"):
-                p.unlink()
-            (self.m.work / "prepare.json").unlink(missing_ok=True)
+            for p in self.store.glob(self.m.work, "*.16k.wav"):
+                self.store.unlink(p)
+            self.store.unlink(self.m.work / "prepare.json")
         # Rename the folder after the meeting title.
         summary = self.store.read_json(self.m.work / "summary.json") or {}
         if meeting.get("title_source", "default") in DEFAULT_TITLES:
@@ -284,7 +284,7 @@ class Processor:
             name = folder_name(self.m.path.name, meeting.get("started_at"), title)
             if not re.fullmatch(re.escape(name) + r"( \d+)?", self.m.path.name):
                 new_path = self.store.unique_path(self.m.path.parent, name)
-                self.m.path.rename(new_path)
+                self.store.rename(self.m.path, new_path)
                 self.m = self.store.open(new_path)
                 self.r.log_file = self.m.file("pipeline.log")
         self.r.stage_end("finalize", message=self.m.path.name)

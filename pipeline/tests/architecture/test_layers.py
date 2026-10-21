@@ -32,6 +32,8 @@ PURE_STDLIB = {"__future__", "re", "unicodedata", "math", "collections", "datacl
 APPLICATION_STDLIB = PURE_STDLIB | {"os", "pathlib", "time", "traceback"}
 VALUE_LIBS = {"numpy", "scipy"}  # numeric value libraries: allowed in domain and application
 HEAVY_LIBS = {"mlx", "mlx_whisper", "torch", "pyannote", "huggingface_hub", "soundfile"}
+# Heavy model/audio libs that must never load at CLI import (numpy/scipy are value libs, checked separately).
+CLI_BANNED = HEAVY_LIBS | {"numpy", "scipy"}
 IO_STDLIB = {"subprocess", "urllib", "shutil", "ctypes"}
 
 # layer -> layers it may import from
@@ -172,6 +174,22 @@ def test_heavy_libs_and_io_stdlib_stay_in_outbound_adapters():
     assert not violations(check)
 
 
+def test_adapters_import_heavy_libs_only_inside_functions():
+    """Module top level stays light so adapters can be imported (and typed against) without the ML stack."""
+    out = []
+    for module, path in FILES:
+        if layer_of(module) not in ("outbound", "inbound"):
+            continue
+        for node in ast.parse(path.read_text(encoding="utf-8")).body:
+            names = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and not node.level:
+                names = [node.module or ""]
+            out += [f"{path.relative_to(SRC)}:{node.lineno}: top-level import of {n}" for n in names if n.split(".")[0] in HEAVY_LIBS]
+    assert not out, "\n".join(out)
+
+
 def test_no_import_cycles_between_layers():
     graph: dict[str, set[str]] = {layer: set() for layer in ALLOWED}
     for module, path in FILES:
@@ -209,7 +227,7 @@ def test_cli_import_loads_no_heavy_libs(modules):
         + "".join(f"import {m}\n" for m in modules)
         + "from meeting_notes.entrypoints import wiring\n"
         + "wiring.command_deps()\n"
-        + "banned = {'torch', 'mlx', 'mlx_whisper', 'pyannote', 'huggingface_hub', 'soundfile', 'numpy', 'scipy'}\n"
+        + f"banned = set({sorted(CLI_BANNED)!r})\n"
         + "loaded = sorted({m.split('.')[0] for m in sys.modules} & banned)\n"
         + "print(','.join(loaded))\n"
     )

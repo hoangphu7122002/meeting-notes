@@ -4,18 +4,19 @@ from __future__ import annotations
 
 import json
 import sys
+import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ...application.errors import Cancelled, OllamaError
-from ...config import CONFIG_PATH, Config, hf_token
+from ...config import CONFIG_PATH, Config, hf_token, redact
 from ...domain.glossary import glossary_entries
 from ...domain.notes_schema import template_name
 
 if TYPE_CHECKING:
-    from ...application.ports import LlmClient, ProgressReporter
+    from ...application.ports import LlmClient, MeetingProcessor, ProgressReporter, WorkerServer
 
 CTL_COMMANDS = ["start", "stop", "pause", "resume", "toggle", "show", "status"]
 
@@ -25,10 +26,10 @@ class CommandDeps:
     """Outbound capabilities for the commands; entrypoints/wiring.py builds the real set."""
 
     make_reporter: Callable[..., ProgressReporter]  # (json_mode=...)
-    make_processor: Callable[[Path, Config, ProgressReporter], object]  # object with run(from_stage=None)
+    make_processor: Callable[[Path, Config, ProgressReporter], MeetingProcessor]
     import_audio: Callable[[Path, Path, str | None], Path]  # (audio, notes_dir, title) -> meeting folder
     make_llm: Callable[[Config], LlmClient]
-    make_worker: Callable[[], object]  # object with serve() -> int
+    make_worker: Callable[[], WorkerServer]
     check_hf_access: Callable[[list[str]], dict[str, str]]
     cached_status: Callable[[str], bool | None]
     download_model: Callable[[str], None]
@@ -36,6 +37,11 @@ class CommandDeps:
     find_ffmpeg: Callable[[], str]
     read_app_state: Callable[[], object]  # raises OSError/ValueError when unavailable
     send_app_command: Callable[[str], int]
+
+
+def _report_failure() -> None:
+    """Exit-code-only failures still leave the traceback on stderr (secrets redacted)."""
+    print(redact(traceback.format_exc()), file=sys.stderr)
 
 
 def cmd_process(args, cfg: Config, deps: CommandDeps) -> int:
@@ -49,6 +55,7 @@ def cmd_process(args, cfg: Config, deps: CommandDeps) -> int:
     except Cancelled:
         return 3
     except Exception:
+        _report_failure()
         return 1
     return 0
 
@@ -79,6 +86,7 @@ def cmd_import(args, cfg: Config, deps: CommandDeps) -> int:
     try:
         deps.make_processor(folder, cfg, deps.make_reporter(json_mode=args.json)).run()
     except Exception:
+        _report_failure()
         return 1
     return 0
 

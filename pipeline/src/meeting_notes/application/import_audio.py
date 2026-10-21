@@ -13,12 +13,12 @@ from .ports import MeetingStore
 
 def import_audio(src: Path, notes_dir: Path, title: str | None = None, *, store: MeetingStore) -> Path:
     """Create a meeting folder from an existing audio/video file (the source is copied, never moved)."""
-    if not src.exists():
+    if not store.exists(src):
         raise PipelineError(f"{src} not found")
-    started = datetime.fromtimestamp(src.stat().st_mtime).astimezone()
-    notes_dir.mkdir(parents=True, exist_ok=True)
+    started = datetime.fromtimestamp(store.mtime(src)).astimezone()
+    store.mkdir(notes_dir)
     folder = store.unique_path(notes_dir, f"{folder_stamp(started)} {sanitize_title(title or src.stem)}")
-    folder.mkdir()
+    store.mkdir(folder)
     dest = folder / f"source{src.suffix.lower()}"
     store.copy_file(src, dest)
     store.write_json(folder / "meeting.json", {

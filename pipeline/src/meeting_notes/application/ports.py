@@ -133,3 +133,40 @@ class MeetingStore(Protocol):
     def unique_path(self, parent: Path, name: str) -> Path: ...
 
     def copy_file(self, src: Path, dest: Path) -> None: ...
+
+    def exists(self, path: Path) -> bool: ...
+
+    def mkdir(self, path: Path) -> None:
+        """Create the folder with its parents; fine if it already exists."""
+
+    def write_text(self, path: Path, text: str) -> None: ...
+
+    def unlink(self, path: Path) -> None:
+        """Delete a file; fine if it is already gone."""
+
+    def rename(self, src: Path, dest: Path) -> None: ...
+
+    def size(self, path: Path) -> int: ...
+
+    def mtime(self, path: Path) -> float: ...
+
+    def glob(self, folder: Path, pattern: str) -> list[Path]: ...
+
+
+class MeetingProcessor(Protocol):
+    """A configured Processor: runs the stages of one meeting folder."""
+
+    def run(self, from_stage: str | None = None) -> Path: ...
+
+
+class WorkerServer(Protocol):
+    """The JSON-lines worker loop; returns the process exit code."""
+
+    def serve(self) -> int: ...
+
+
+class Summarizer(Protocol):
+    """Turns transcript lines into structured notes with the local LLM."""
+
+    def __call__(self, lines: list[str], language: str, cfg, progress: Callable[[float, str], None] | None = None,
+                 template: str | None = None) -> dict: ...
