@@ -1,0 +1,135 @@
+"""Ports: what the use cases need from the outside world. Adapters in adapters/outbound implement them."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from pathlib import Path
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:  # annotations only: importing the ports must not load numpy
+    import numpy as np
+
+    from ..domain.speakers import TrackDiarization
+
+
+class Diarizer(Protocol):
+    cfg: object
+
+    def diarize(self, audio: np.ndarray, progress: Callable[[float], None] | None = None) -> TrackDiarization: ...
+
+    def release(self) -> None: ...
+
+
+class Transcriber(Protocol):
+    cfg: object
+
+    def detect_language(self, audio: np.ndarray) -> dict[str, float]: ...
+
+    def transcribe(self, audio: np.ndarray, language: str) -> list[dict]: ...
+
+    def release(self) -> None: ...
+
+
+class LlmClient(Protocol):
+    def ensure_model(self, progress: Callable[[float, str], None] | None = None) -> None: ...
+
+    def chat(self, system: str, user: str, tick: Callable[[int], None] | None = None, fmt: dict | None = None,
+             raw: bool = False) -> dict: ...
+
+    def list_models(self) -> set[str]: ...
+
+
+class ModelProvider(Protocol):
+    """Lazily loaded diarizer/transcriber shared across jobs; `done_with_*` frees them unless kept warm."""
+
+    def diarizer(self) -> Diarizer: ...
+
+    def transcriber(self) -> Transcriber: ...
+
+    def done_with_diarizer(self) -> None: ...
+
+    def done_with_transcriber(self) -> None: ...
+
+
+class ManagedModels(ModelProvider, Protocol):
+    """A ModelProvider a long-lived worker also warms, reconfigures and releases."""
+
+    keep: bool
+    last_used: float
+
+    @property
+    def loaded(self) -> bool: ...
+
+    def update_config(self, cfg) -> None: ...
+
+    def warmup(self) -> dict[str, float]: ...
+
+    def release(self) -> None: ...
+
+
+class ProgressReporter(Protocol):
+    """Stage and progress events for the app/CLI. `progress` and `stage_start` are cancellation points."""
+
+    log_file: Path | None
+    audio_sec: float | None
+    timings: dict[str, float]
+
+    def stage_start(self, stage: str, message: str = "") -> None: ...
+
+    def stage_end(self, stage: str, status: str = "done", message: str = "") -> None: ...
+
+    def progress(self, fraction: float, message: str = "") -> None: ...
+
+    def warning(self, message: str) -> None: ...
+
+    def error(self, message: str) -> None: ...
+
+    def cancelled(self, folder: Path) -> None: ...
+
+    def partial(self, folder: Path, notes: Path) -> None: ...
+
+    def done(self, folder: Path, notes: Path, title: str) -> None: ...
+
+    def log(self, message: str) -> None: ...
+
+
+class AudioIO(Protocol):
+    """Decode/encode audio files (ffmpeg) and read/write the 16 kHz working WAVs."""
+
+    def decode(self, path: Path) -> np.ndarray: ...
+
+    def encode_m4a(self, inputs: list[tuple[Path, float]], dest: Path) -> None: ...
+
+    def read_wav(self, path: Path) -> np.ndarray: ...
+
+    def write_wav(self, path: Path, audio: np.ndarray) -> None: ...
+
+
+class MeetingFolder(Protocol):
+    """One meeting folder on disk (meeting.json, .work/, outputs)."""
+
+    path: Path
+    work: Path
+
+    def file(self, name: str) -> Path: ...
+
+    @property
+    def meeting(self) -> dict: ...
+
+    def track_sources(self) -> dict[str, tuple[Path, float]]: ...
+
+
+class MeetingStore(Protocol):
+    """Opens meeting folders and owns the small file helpers around them."""
+
+    def open(self, path: Path) -> MeetingFolder: ...
+
+    def read_json(self, path: Path) -> dict | None: ...
+
+    def write_json(self, path: Path, data: dict) -> None: ...
+
+    def pid_alive(self, pid: int) -> bool: ...
+
+    def unique_path(self, parent: Path, name: str) -> Path: ...
+
+    def copy_file(self, src: Path, dest: Path) -> None: ...

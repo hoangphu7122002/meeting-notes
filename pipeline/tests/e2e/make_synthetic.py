@@ -17,7 +17,9 @@ from pathlib import Path
 
 import numpy as np
 
-from meeting_notes import audio as A
+from meeting_notes.adapters.outbound.ffmpeg_audio import decode
+from meeting_notes.adapters.outbound.wav_files import write_wav
+from meeting_notes.domain.signal import SR, mix
 
 SCRIPT = [
     ("mic", "Linh", "Chào mọi người, hôm nay mình họp nhanh về việc ra mắt phiên bản hai của ứng dụng ghi chú cuộc họp."),
@@ -36,7 +38,7 @@ SYSTEM_OFFSET_SEC = 0.12  # the system track starts slightly later, as in real c
 def say(voice: str, text: str, tmp: Path, i: int) -> np.ndarray:
     path = tmp / f"{i:02d}.aiff"
     subprocess.run(["say", "-v", voice, "-o", str(path), text], check=True)
-    return A.decode(path)
+    return decode(path)
 
 
 def main() -> None:
@@ -52,32 +54,32 @@ def main() -> None:
     placed = []
     for track, clip in clips:
         placed.append((track, cursor, clip))
-        cursor += len(clip) / A.SR + GAP_SEC
-    length = int((cursor + 1.0) * A.SR)
+        cursor += len(clip) / SR + GAP_SEC
+    length = int((cursor + 1.0) * SR)
     tracks = {"mic": np.zeros(length, np.float32), "system": np.zeros(length, np.float32)}
     for track, start, clip in placed:
-        i = int(start * A.SR)
+        i = int(start * SR)
         tracks[track][i:i + len(clip)] += 0.6 * clip
     rng = np.random.default_rng(0)
     tracks["mic"] += rng.normal(0, 0.002, length).astype(np.float32)  # room noise
     if args.bleed:
-        tracks["mic"] += 0.15 * np.roll(tracks["system"], int(0.03 * A.SR))
+        tracks["mic"] += 0.15 * np.roll(tracks["system"], int(0.03 * SR))
 
     folder = args.out / args.name
     folder.mkdir(parents=True, exist_ok=True)
-    A.write_wav(folder / "mic.wav", tracks["mic"])
-    shift = int(SYSTEM_OFFSET_SEC * A.SR)  # the system file itself starts later; meeting.json records it
-    A.write_wav(folder / "system.wav", tracks["system"][shift:])
+    write_wav(folder / "mic.wav", tracks["mic"])
+    shift = int(SYSTEM_OFFSET_SEC * SR)  # the system file itself starts later; meeting.json records it
+    write_wav(folder / "system.wav", tracks["system"][shift:])
     (folder / "meeting.json").write_text(json.dumps({
         "version": 1, "title": "Meeting", "title_source": "default", "app_hint": None,
         "started_at": "2026-10-19T09:00:00+07:00", "ended_at": "2026-10-19T09:01:00+07:00",
-        "duration_sec": round(length / A.SR, 2),
-        "tracks": {"mic": {"file": "mic.wav", "start_offset_sec": 0.0, "sample_rate": A.SR},
-                   "system": {"file": "system.wav", "start_offset_sec": SYSTEM_OFFSET_SEC, "sample_rate": A.SR}},
+        "duration_sec": round(length / SR, 2),
+        "tracks": {"mic": {"file": "mic.wav", "start_offset_sec": 0.0, "sample_rate": SR},
+                   "system": {"file": "system.wav", "start_offset_sec": SYSTEM_OFFSET_SEC, "sample_rate": SR}},
         "warnings": [],
     }, indent=2))
-    A.write_wav(args.out / "mixed.wav", A.mix([tracks["mic"], tracks["system"]]))
-    truth = [{"start": round(s, 2), "end": round(s + len(c) / A.SR, 2), "track": t} for t, s, c in placed]
+    write_wav(args.out / "mixed.wav", mix([tracks["mic"], tracks["system"]]))
+    truth = [{"start": round(s, 2), "end": round(s + len(c) / SR, 2), "track": t} for t, s, c in placed]
     (args.out / "truth.json").write_text(json.dumps(truth, indent=2))
     print(folder)
 

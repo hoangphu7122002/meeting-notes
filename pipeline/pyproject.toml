@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.scripts]
-meeting-notes = "meeting_notes.cli:main"
+meeting-notes = "meeting_notes.entrypoints.cli:main"
 
 [build-system]
 requires = ["hatchling"]
