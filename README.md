@@ -141,6 +141,22 @@ Model notes:
 - `qwen3:14b` (~9 GB) is not recommended on 16 GB.
 - After changing the summary model, re-run `process <folder> --from summarize` on old meetings if you want.
 
+### Using PhoWhisper or a quantized whisper (experimental)
+
+`whisper_model` also accepts a local mlx-whisper directory. Convert a Hugging Face Whisper checkpoint (or quantize an existing mlx model) with the bundled script, then point the config at the output:
+
+```bash
+cd pipeline
+uv run python scripts/convert_phowhisper.py vinai/PhoWhisper-large ../models/phowhisper-large-q8-mlx --bits 8
+uv run python scripts/convert_phowhisper.py mlx-community/whisper-large-v3-turbo ../models/whisper-turbo-q4-mlx --bits 4
+```
+
+```toml
+whisper_model = "/Users/you/meeting-notes/models/phowhisper-large-q8-mlx"   # or env MEETING_NOTES_WHISPER_MODEL
+```
+
+PhoWhisper is **not** the default: in our benchmark it did not beat turbo on Vietnamese and handled English and code-switched terms much worse. Turbo q4 matched fp16 quality with about half the GPU memory. Numbers and method: `docs/research/phowhisper-mlx.md`. Benchmark a model with `uv run python tests/eval/asr_bench.py all <dir> new --model <path> --label <name>`.
+
 Environment overrides: `MEETING_NOTES_OLLAMA_MODEL`, `MEETING_NOTES_WHISPER_MODEL`, `MEETING_NOTES_DIR`, `MEETING_NOTES_CONFIG`.
 
 ## Performance

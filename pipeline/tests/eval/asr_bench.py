@@ -3,6 +3,10 @@
   uv run python tests/eval/asr_bench.py make <dir>             # synthesize corpus.wav + corpus.json once
   uv run python tests/eval/asr_bench.py run <dir> <variant>    # one variant, prints a JSON result line
   uv run python tests/eval/asr_bench.py all <dir> [variants]   # every variant, each in its own process
+  ... run|all ... --model <repo|path>      # override the whisper model (e.g. a converted ../models/phowhisper-large-mlx)
+  ... run|all ... --vi-model <repo|path>   # route blocks detected as vi to this model; detection + other languages
+                                           # use --model (default turbo); both models stay loaded
+  ... run|all ... --label <name>           # result name (default: variant, or variant@<model dir name>)
 
 Each variant runs in a fresh process (nice 10, 4 threads) so peak memory is measured per variant.
 The corpus mimics what reaches whisper after diarization: one block per utterance, some blocks with
@@ -137,7 +141,43 @@ def make(out: Path) -> None:
     print(f"{out}: {length / SR:.0f} s audio, {len(blocks)} blocks, {speech:.0f} s in speech blocks")
 
 
-def run(out: Path, variant: str) -> dict:
+def cer(ref: str, hyp: str) -> tuple[int, int]:
+    """(char errors, reference chars) on normalized words joined by single spaces."""
+    from meeting_notes.metrics import edit_distance, words
+
+    r, h = " ".join(words(ref)), " ".join(words(hyp))
+    return edit_distance(list(r), list(h)), len(r)
+
+
+def routed_transcriber(cfg, vi_model: str):
+    """Transcriber that detects language with cfg.whisper_model and decodes vi blocks with `vi_model`.
+
+    mlx_whisper.transcribe reloads whenever the model path changes, so both models are loaded once and
+    swapped into ModelHolder before each call."""
+    import mlx.core as mx
+    from mlx_whisper.load_models import load_model
+    from mlx_whisper.transcribe import ModelHolder
+
+    from meeting_notes.transcribe import Transcriber
+
+    class Routed(Transcriber):
+        _vi = None
+
+        def transcribe(self, audio, language):
+            base = self._load()
+            if language == "vi":
+                if Routed._vi is None:
+                    Routed._vi = load_model(vi_model, mx.float16)
+                ModelHolder.model, ModelHolder.model_path = Routed._vi, self.cfg.whisper_model
+            try:
+                return super().transcribe(audio, language)
+            finally:
+                ModelHolder.model, ModelHolder.model_path = base, self.cfg.whisper_model
+
+    return Routed(cfg)
+
+
+def run(out: Path, variant: str, model_path: str | None = None, vi_model: str | None = None) -> dict:
     from meeting_notes import audio as A
     from meeting_notes.config import Config
     from meeting_notes.metrics import term_hits, wer
@@ -146,7 +186,7 @@ def run(out: Path, variant: str) -> dict:
 
     model, overrides = VARIANTS[variant]
     corpus = json.loads((out / "corpus.json").read_text())
-    cfg = Config(whisper_model=MODELS[model], languages=["vi", "en"], glossary=corpus["glossary"])
+    cfg = Config(whisper_model=model_path or MODELS[model], languages=["vi", "en"], glossary=corpus["glossary"])
     for k, v in overrides.items():
         if k == "_prompt_lead":
             import meeting_notes.transcribe as T
@@ -157,7 +197,7 @@ def run(out: Path, variant: str) -> dict:
     track = A.read_wav(out / "corpus.wav")
     tracks = {"mixed": track}
     truth = corpus["blocks"]
-    tr = Transcriber(cfg)
+    tr = routed_transcriber(cfg, vi_model) if vi_model else Transcriber(cfg)
     t0 = time.monotonic()
     tr._load()
     tr.detect_language(np.zeros(SR, np.float32))
@@ -173,6 +213,7 @@ def run(out: Path, variant: str) -> dict:
     asr_sec = time.monotonic() - t0
 
     agg: dict[str, list[int]] = {}
+    cagg: dict[str, list[int]] = {}
     hallucinated = 0
     terms = [0, 0]
     examples = []
@@ -183,10 +224,14 @@ def run(out: Path, variant: str) -> dict:
                 examples.append({"noise": b["kind"], "hyp": hyp[:120]})
             continue
         e, n = wer(b["text"], hyp)
+        ce, cn = cer(b["text"], hyp)
         for key in (b["category"], "all"):
             agg.setdefault(key, [0, 0])
             agg[key][0] += e
             agg[key][1] += n
+            cagg.setdefault(key, [0, 0])
+            cagg[key][0] += ce
+            cagg[key][1] += cn
         h, p = term_hits(b["text"], hyp, corpus["glossary"])
         terms[0] += h
         terms[1] += p
@@ -202,8 +247,10 @@ def run(out: Path, variant: str) -> dict:
 
     speech_sec = sum(b["end"] - b["start"] for b in truth)
     return {
-        "variant": variant, "model": cfg.whisper_model.split("/")[-1],
+        "variant": variant, "model": cfg.whisper_model.rstrip("/").split("/")[-1],
+        "vi_model": vi_model.rstrip("/").split("/")[-1] if vi_model else None,
         "wer": {k: round(e / n, 4) for k, (e, n) in agg.items()},
+        "cer": {k: round(e / n, 4) for k, (e, n) in cagg.items()},
         "term_recall": round(terms[0] / max(terms[1], 1), 3), "hallucinated_words": hallucinated,
         "asr_sec": round(asr_sec, 1), "rtf": round(asr_sec / speech_sec, 3), "load_sec": round(load_sec, 1),
         "peak_rss_gb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**30, 2),
@@ -213,37 +260,58 @@ def run(out: Path, variant: str) -> dict:
     }
 
 
-def run_all(out: Path, names: list[str]) -> None:
+def label_for(name: str, opts: dict) -> str:
+    if opts.get("label"):
+        return opts["label"]
+    tags = [Path(opts[k]).name for k in ("model", "vi_model") if opts.get(k)]
+    return "@".join([name, *tags])
+
+
+def run_all(out: Path, names: list[str], opts: dict | None = None) -> None:
+    opts = opts or {}
     rows = []
     env = {**os.environ, "OMP_NUM_THREADS": "4", "VECLIB_MAXIMUM_THREADS": "4", "MKL_NUM_THREADS": "4"}
-    for name in names:
-        proc = subprocess.run(["nice", "-n", "10", sys.executable, __file__, "run", str(out), name],
+    extra = [a for k in ("model", "vi_model") if opts.get(k) for a in (f"--{k.replace('_', '-')}", opts[k])]
+    for variant in names:
+        name = label_for(variant, opts)
+        proc = subprocess.run(["nice", "-n", "10", sys.executable, __file__, "run", str(out), variant, *extra],
                               capture_output=True, text=True, env=env)
         if proc.returncode:
             print(f"{name}: failed\n{proc.stderr[-1500:]}", file=sys.stderr)
             continue
         row = json.loads(proc.stdout.strip().splitlines()[-1])
+        row["label"] = name
         rows.append(row)
         (out / f"result.{name}.json").write_text(json.dumps(row, ensure_ascii=False, indent=1))
         print(f"{name:20s} WER all {row['wer']['all']:.3f} vi {row['wer'].get('vi', 0):.3f} en {row['wer'].get('en', 0):.3f} "
-              f"mixed {row['wer'].get('mixed', 0):.3f} mono {row['wer'].get('monologue', 0):.3f} | terms {row['term_recall']:.2f} "
+              f"mixed {row['wer'].get('mixed', 0):.3f} mono {row['wer'].get('monologue', 0):.3f} "
+              f"| CER vi {row['cer'].get('vi', 0):.3f} en {row['cer'].get('en', 0):.3f} mixed {row['cer'].get('mixed', 0):.3f} | terms {row['term_recall']:.2f} "
               f"| halluc {row['hallucinated_words']} | asr {row['asr_sec']}s rtf {row['rtf']} load {row['load_sec']}s "
               f"| rss {row['peak_rss_gb']} GB mlx {row['peak_mlx_gb']} GB", flush=True)
 
 
 def main() -> None:
-    cmd, out = sys.argv[1], Path(sys.argv[2])
+    import argparse
+
+    ap = argparse.ArgumentParser(usage=__doc__)
+    ap.add_argument("cmd", choices=["make", "run", "all"])
+    ap.add_argument("out", type=Path)
+    ap.add_argument("variants", nargs="?")
+    ap.add_argument("--model")
+    ap.add_argument("--vi-model")
+    ap.add_argument("--label")
+    a = ap.parse_args()
+    cmd, out = a.cmd, a.out
     if cmd == "make":
         make(out)
     elif cmd == "run":
         from meeting_notes.resources import low_priority
 
         low_priority()
-        print(json.dumps(run(out, sys.argv[3]), ensure_ascii=False))
+        print(json.dumps(run(out, a.variants or "new", a.model, a.vi_model), ensure_ascii=False))
     elif cmd == "all":
-        run_all(out, sys.argv[3].split(",") if len(sys.argv) > 3 else list(VARIANTS))
-    else:
-        raise SystemExit(__doc__)
+        run_all(out, a.variants.split(",") if a.variants else list(VARIANTS),
+                {"model": a.model, "vi_model": a.vi_model, "label": a.label})
 
 
 if __name__ == "__main__":
