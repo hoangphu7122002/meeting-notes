@@ -19,7 +19,6 @@ dev: deps ## deps + swift build + doctor --offline (never launches the app)
 lint: lint-arch ## Architecture checks + app build
 	cd app && swift build
 
-# Needs pipeline/tests/architecture (planned, lands with WP-A).
 lint-arch: ## Python (pytest AST) + Swift (grep) architecture rules
 	cd pipeline && uv run pytest tests/architecture -q
 	scripts/check-swift-arch.sh

@@ -1,6 +1,6 @@
 import Foundation
 
-/// One stdout line of `meeting-notes worker` (see pipeline/src/meeting_notes/worker.py and events.py).
+/// One stdout line of `meeting-notes worker` (see pipeline/src/meeting_notes/adapters/inbound/worker.py and adapters/outbound/progress_reporter.py).
 public enum WorkerEvent: Equatable, Sendable {
     case worker(status: String, message: String?)
     case stage(job: String?, stage: String, status: String, elapsedSec: Double?, etaSec: Double?, overall: Double?, message: String?)

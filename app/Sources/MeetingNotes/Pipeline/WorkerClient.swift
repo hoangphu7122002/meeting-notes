@@ -4,7 +4,7 @@ import MeetingNotesUI
 
 /// The long-lived `meeting-notes worker` process, spawned on demand.
 ///
-/// stdin/stdout are JSON lines (see pipeline/src/meeting_notes/worker.py). stderr goes to the current
+/// stdin/stdout are JSON lines (see pipeline/src/meeting_notes/adapters/inbound/worker.py). stderr goes to the current
 /// job's `pipeline.app.log` (or `~/Library/Logs/MeetingNotes/worker.log` between jobs). The worker exits
 /// by itself after about a minute idle; the next job respawns it.
 @MainActor

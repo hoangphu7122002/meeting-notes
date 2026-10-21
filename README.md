@@ -218,7 +218,7 @@ cd pipeline
 uv run pytest                                       # unit tests (fast, no models)
 MEETING_NOTES_E2E=1 uv run pytest tests/e2e/test_e2e.py # end-to-end: synthetic Vietnamese/English meeting via `say` + real models + Ollama
 uv run python tests/e2e/make_synthetic.py /tmp/x    # just generate the synthetic meeting
-cd ../app && swift build && swift test             # app debug build + unit tests (MeetingNotesCore)
+cd ../app && swift build && swift test             # app debug build + unit tests (Core + UI)
 swift run MeetingNotesPreviews ../docs/screenshots  # offscreen PNGs of the pill and main window (fake state; never starts the app)
 ~/Applications/MeetingNotes.app/Contents/MacOS/MeetingNotes --self-test-record 20 /tmp/mn-test --pause-at 6 --pause-for 5   # headless recording test
 ```

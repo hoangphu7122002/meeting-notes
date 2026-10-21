@@ -80,6 +80,8 @@ def imports_of(module: str, path: Path) -> list[tuple[str, int]]:
             else:
                 name = node.module or ""
             found.append((name, node.lineno))
+            # `from ..adapters import outbound` names the layer only in the alias.
+            found += [(f"{name}.{alias.name}", node.lineno) for alias in node.names if alias.name != "*"]
     return found
 
 

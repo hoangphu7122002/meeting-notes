@@ -24,7 +24,7 @@ app/Sources/
   MeetingNotesUI/        SwiftUI views + view state: State/ MainWindow/ Pill/ Notes/ Settings/ Shared/
   MeetingNotes/          executable: main.swift AppDelegate.swift Controller/ Presentation/ Capture/ Pipeline/ System/ Diagnostics/
   MeetingNotesPreviews/  offscreen PNG renderer with fake state
-app/Tests/               Core tests
+app/Tests/               Core + UI tests
 pipeline/src/meeting_notes/
   config/                settings kernel (Config, TOML + env loader, hf_token, redact)
   domain/                pure: stdlib + numpy/scipy; intervals, signal, speakers, segments, notes rules/markdown, metrics
@@ -32,7 +32,7 @@ pipeline/src/meeting_notes/
   adapters/outbound/     one vendor or sink per file: ffmpeg, wav, meeting folder, pyannote, mlx, ollama, hf hub, progress
   adapters/inbound/      commands.py (CLI handlers), worker.py (JSON-lines worker)
   entrypoints/           cli.py (argparse main), wiring.py (dependency factory)
-pipeline/tests/          unit/{domain,application,adapters} architecture/ e2e/ · pipeline/bench/ (asr, summary benches)
+pipeline/tests/          unit/{domain,application,adapters} architecture/ e2e/ · pipeline/bench/ (asr, summary benches) · pipeline/scripts/ (model converter)
 scripts/                 install.sh build-app.sh setup-signing.sh check-swift-arch.sh
 docs/  models/  build/   research + screenshots; model weights (ignored); app bundle output (ignored)
 ```
@@ -40,7 +40,7 @@ docs/  models/  build/   research + screenshots; model weights (ignored); app bu
 ## Architecture rules
 
 `make lint-arch` = `pipeline/tests/architecture` (pytest AST scan) + `scripts/check-swift-arch.sh`.
-- Python: domain imports pure stdlib, numpy and scipy only (no config, no I/O). Application imports domain, config, numpy and its own ports; never adapters. `adapters/outbound` and `adapters/inbound` never import each other. Heavy libs (`mlx*`, `torch`, `pyannote`, `huggingface_hub`, `soundfile`) and I/O stdlib (`subprocess`, `urllib`, `shutil`, `ctypes`) are adapter-only, imported lazily. Only `entrypoints/` wires adapters to use cases.
+- Python: domain imports pure stdlib, numpy and scipy only (no config, no I/O). Application imports domain, config, numpy/scipy, light stdlib (`os`, `pathlib`, `time`, `traceback`) and its own ports; never adapters. `adapters/outbound` and `adapters/inbound` never import each other. Heavy libs (`mlx*`, `torch`, `pyannote`, `huggingface_hub`, `soundfile`) and I/O stdlib (`subprocess`, `urllib`, `shutil`, `ctypes`) live in `adapters/outbound`; `entrypoints/wiring.py` imports those adapters lazily, so the CLI starts without them (tested). Only `entrypoints/` wires adapters to use cases. Python source files stay <= 300 lines.
 - Swift: Core imports no SwiftUI/AppKit/ScreenCaptureKit/CoreAudio/UserNotifications/ServiceManagement/IOKit. UI imports no capture or worker frameworks (ScreenCaptureKit, CoreAudio, UserNotifications, IOKit, AVFoundation). Previews import only Foundation/AppKit/SwiftUI/Core/UI. Source files stay <= 300 lines (except `L10n.swift`).
 
 ## Contracts

@@ -5,8 +5,8 @@ cd "$(dirname "$0")/.."
 SRC=app/Sources
 fail=0
 MAX_LINES=300
-# WP-B flips this to 1 once long files are split.
-LONG_FILES_FATAL=${LONG_FILES_FATAL:-0}
+# LONG_FILES_FATAL=0 downgrades the length check to a warning.
+LONG_FILES_FATAL=${LONG_FILES_FATAL:-1}
 
 # check <target> <forbidden-import-regex>
 check_forbidden() {
@@ -32,7 +32,7 @@ fi
 long=$(find "$SRC" -name '*.swift' ! -name 'L10n.swift' -exec wc -l {} + | awk -v m=$MAX_LINES '$2!="total" && $1>m {print $1, $2}' || true)
 if [ -n "$long" ]; then
   if [ "$LONG_FILES_FATAL" = 1 ]; then echo "ERROR: Swift files over $MAX_LINES lines:"; fail=1
-  else echo "WARNING: Swift files over $MAX_LINES lines (non-fatal until WP-B; LONG_FILES_FATAL=1 to enforce):"; fi
+  else echo "WARNING: Swift files over $MAX_LINES lines (non-fatal: LONG_FILES_FATAL=0):"; fi
   echo "$long"
 fi
 
