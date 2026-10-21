@@ -58,7 +58,8 @@ class Config:
     ollama_keep_alive: str = "1m"  # unload soon after the summary to give RAM back
     ollama_num_thread: int = 4
     ollama_timeout_sec: int = 900
-    summary_chunk_chars: int = 18000
+    summary_chunk_chars: int = 18000  # transcripts up to this size get one summary call
+    summary_extract_chars: int = 9000  # longer ones: items are extracted from parts of this size, merged in Python
     # Summary template: general | one_on_one | standup | interview (a meeting.json "template" key overrides it).
     summary_template: str = "general"
     # Notes language: "auto" = the meeting's main spoken language, or an ISO code such as "vi" / "en".

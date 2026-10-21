@@ -42,7 +42,8 @@ ollama_num_ctx = 12288
 ollama_keep_alive = "1m"    # unload soon after the summary
 ollama_num_thread = 4
 ollama_preload = false      # true: load the summary model during transcription (faster, more RAM at once)
-summary_chunk_chars = 18000 # longer transcripts are summarized in parts, then merged
+summary_chunk_chars = 18000 # longer transcripts are summarized in parts:
+summary_extract_chars = 9000 # items are extracted per part of this size and merged in Python (no LLM merge)
 # Summary template: general | one_on_one | standup | interview. Adds template sections (standup: updates,
 # blockers; 1:1: feedback, growth; interview: strengths, concerns). A meeting.json "template" key wins.
 summary_template = "general"

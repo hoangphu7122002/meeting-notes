@@ -121,7 +121,7 @@ The stages are `prepare → diarize → transcribe → summarize → render → 
   - **No headphones:** if the mic hears your speakers, mic activity during remote speech is treated as echo and dropped.
   - **In-person meetings:** several distinct voices on the mic get their own labels (`mic_speakers = "me"` turns this off).
 - **Transcription:** whisper large-v3-turbo (4-bit, `mlx-community/whisper-large-v3-turbo-q4`) runs per speaker block. The language is detected per block and per turn, restricted to `languages` (default `["vi", "en"]`), so mixed Vietnamese/English meetings are transcribed in the right language turn by turn. Typical Whisper hallucinations on silence ("Hẹn gặp lại các bạn trong những video tiếp theo", "Thanks for watching") are filtered out.
-- **Summary:** Ollama `qwen3:4b` by default (thinking disabled, JSON-schema output, temperature 0.2) produces the summary, decisions, action items and open questions in the main language. Long meetings are summarized in parts and then merged.
+- **Summary:** Ollama `qwen3:4b` by default (thinking disabled, JSON-schema output, temperature 0.2) produces the summary, decisions, action items and open questions in the main language. Long meetings (over `summary_chunk_chars`, ~20 min) are extracted part by part (`summary_extract_chars`); lines with explicit decision words, a commitment with a deadline, or a question said to be open are checked so none is lost, and the items are merged in Python rather than by the model. On a 1-hour synthetic test this raised recall of the 10 planted decisions/action items/questions from 1-2/10 to 10/10 (`pipeline/tests/eval/summary_bench.py --long`).
 
 ## Change models
 

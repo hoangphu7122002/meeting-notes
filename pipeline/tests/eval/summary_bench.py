@@ -1,6 +1,11 @@
 """Summary benchmark on synthetic transcripts with known facts (needs Ollama).
 
   uv run python tests/eval/summary_bench.py [--model qwen3:4b] [--impl new|old] [--cases a,b] [--out result.json]
+  uv run python tests/eval/summary_bench.py --long <meeting>/transcript.json [--impl old]
+
+`--long` scores a real pipeline transcript of the ~60 min synthetic meeting (make_long.py: 10 planted
+decisions / action items / one open question among filler) and reports recall, owner/due accuracy,
+output size, wall time and peak Ollama memory.
 
 `--impl old` loads summarize.py from git HEAD (the previous prompt) for a before/after comparison.
 Scores per case: task recall, owner accuracy, invented owners / due dates (set where the transcript has
@@ -25,7 +30,8 @@ PIPELINE = HERE.parents[1]
 
 def fold(text: str) -> str:
     text = unicodedata.normalize("NFD", (text or "").lower().replace("đ", "d"))
-    return " ".join(re.sub(r"[^\w\s]", " ", "".join(c for c in text if unicodedata.category(c) != "Mn")).split())
+    text = re.sub(r"[^\w\s]", " ", "".join(c for c in text if unicodedata.category(c) != "Mn"))
+    return " ".join(re.sub(r"(\d)(st|nd|rd|th)\b", r"\1", text).split())  # "7th" -> "7"
 
 
 # Each task: (keywords, any of which identifies it in the output (folded), gold owner or None, gold due or None).
@@ -127,6 +133,123 @@ def long_case() -> dict:
     return {**base, "lines": lines, "chunk_chars": 2200}
 
 
+# Planted items of the 1-hour synthetic meeting (make_long.py PLANTED). Keywords are folded and tolerate ASR
+# misspellings and the summary translating English lines into Vietnamese.
+# (kind, key, keywords, accepted owners, due keywords)
+LONG_PLANTED = [
+    ("action", "Tuấn: Q3 revenue report -> Minh Anh by Wed Oct 22", ["quy 3", "quy ba", "q3"], ["Tuấn"],
+     ["thu 4", "thu tu", "22"]),
+    ("action", "Sarah: fix payment timeout bug by Fri Oct 24", ["timeout", "time out"], ["Sarah", "Speaker 1"],
+     ["friday", "24", "thu 6", "thu sau"]),
+    ("decision", "Mobile v3 launch moved Nov 15 -> Dec 1", ["launch", "ra mat", "1 thang 12", "1 12", "december", "15 thang 11"],
+     None, None),
+    ("decision", "Keep price at $5/month for rest of year", ["5 per month", "5 month", "5 thang", "5 usd", "5 do", "giu gia", "price"],
+     None, None),
+    ("action", "Minh Anh: schedule design review next Tuesday", ["review thiet ke", "design review", "team design", "nhom thiet ke"],
+     ["Minh Anh", "Speaker 3"], ["thu 3", "thu ba", "tuesday"]),
+    ("action", "Daniel: migrate Postgres to v17 by Nov 7", ["postgres", "postgre"], ["Daniel", "Speaker 2"],
+     ["november 7", "nov 7", "7 thang 11", "7 11"]),
+    ("decision", "Error alerts move from email to Slack #incident", ["slack", "slat", "incident"], None, None),
+    ("action", "Me: onboarding docs for 2 new interns by Oct 30", ["intern", "in ton", "thuc tap", "on waring"], ["Me"],
+     ["30"]),
+    ("question", "Open: support Windows next year?", ["windows"], None, None),
+    ("decision", "Q4 marketing budget 50M VND approved", ["50 trieu", "ngan sach", "budget"], None, None),
+]
+LONG_GLOSSARY = ["Tuấn", "Minh Anh", "Sarah", "Daniel", "Grafana", "Kubernetes", "Slack", "Postgres", "Jira", "staging"]
+
+
+def score_long(notes: dict) -> dict:
+    lists = {
+        "decision": [(d, None, None) for d in notes.get("decisions", [])],
+        "action": [(a["task"], a.get("owner"), a.get("due")) for a in notes.get("action_items", [])],
+        "question": [(q, None, None) for q in notes.get("open_questions", [])],
+    }
+    # Partial credit: a planted decision listed as an action (or the reverse) still counts as captured.
+    anywhere = [x for v in lists.values() for x in v] + [(s, None, None) for s in notes.get("summary", [])]
+    used: set[tuple[str, int]] = set()
+    found, found_any, owner_ok, due_ok, misses = 0, 0, 0, 0, []
+    n_actions = sum(k == "action" for k, *_ in LONG_PLANTED)
+    for kind, key, keys, owners, dues in LONG_PLANTED:
+        hit = next((i for i, (text, *_rest) in enumerate(lists[kind])
+                    if (kind, i) not in used and any(k in fold(text) for k in keys)), None)
+        if hit is None:
+            if any(any(k in fold(t) for k in keys) for t, *_ in anywhere):
+                found_any += 1
+            misses.append(key)
+            continue
+        used.add((kind, hit))
+        found += 1
+        found_any += 1
+        _, owner, due = lists[kind][hit]
+        if owners and owner and any(fold(o) in fold(owner) for o in owners):
+            owner_ok += 1
+        if dues and due and any(f" {d} " in f" {fold(due)} " for d in dues):
+            due_ok += 1
+    total = sum(len(v) for v in lists.values())
+    return {"recall": f"{found}/{len(LONG_PLANTED)}", "recall_any_section": f"{found_any}/{len(LONG_PLANTED)}",
+            "owner_ok": f"{owner_ok}/{n_actions}", "due_ok": f"{due_ok}/{n_actions}",
+            "n_items": total, "n_decisions": len(lists["decision"]), "n_actions": len(lists["action"]),
+            "n_questions": len(lists["question"]), "planted_share": round(found / total, 2) if total else 0.0,
+            "missed": misses}
+
+
+class OllamaMemory:
+    """Peak memory of the Ollama model runner while a summary runs (runner RSS and /api/ps size)."""
+
+    def __init__(self, url: str):
+        import threading
+
+        self.url, self.peak_rss_mb, self.peak_ps_mb = url, 0, 0
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+
+    def _loop(self) -> None:
+        import urllib.request
+
+        while not self._stop.wait(1.0):
+            out = subprocess.run(["ps", "-axo", "rss=,command="], capture_output=True, text=True).stdout
+            rss = sum(int(line.split(None, 1)[0]) for line in out.splitlines() if "ollama runner" in line or ("llama-server" in line and ".ollama" in line))
+            self.peak_rss_mb = max(self.peak_rss_mb, rss // 1024)
+            try:
+                with urllib.request.urlopen(self.url.rstrip("/") + "/api/ps", timeout=2) as resp:
+                    size = sum(m.get("size", 0) for m in json.load(resp).get("models", []))
+                self.peak_ps_mb = max(self.peak_ps_mb, size // 2**20)
+            except OSError:
+                pass
+
+    def __enter__(self):
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._stop.set()
+        self._thread.join()
+
+
+def run_long(mod, impl: str, path: Path, model: str, runs: int) -> list[dict]:
+    from meeting_notes.config import Config
+    from meeting_notes.render import transcript_lines
+
+    transcript = json.loads(path.read_text())
+    lines = transcript_lines(transcript["segments"])
+    rows = []
+    for run in range(runs):
+        cfg = Config(ollama_model=model, ollama_keep_alive="30s", glossary=LONG_GLOSSARY)
+        with OllamaMemory(cfg.ollama_url) as mem:
+            t0 = time.monotonic()
+            if impl == "new":
+                notes = mod.summarize(lines, "vi", cfg, template="general")
+            else:
+                notes = mod.summarize(lines, "vi", cfg)
+            elapsed = time.monotonic() - t0
+        row = {"case": "long_1h", "run": run, "impl": impl, "model": model, "sec": round(elapsed, 1),
+               "peak_runner_rss_mb": mem.peak_rss_mb, "peak_ollama_ps_mb": mem.peak_ps_mb, **score_long(notes),
+               "notes": notes}
+        rows.append(row)
+        print(json.dumps({k: v for k, v in row.items() if k != "notes"}, ensure_ascii=False), flush=True)
+    return rows
+
+
 def load_impl(impl: str):
     if impl == "new":
         from meeting_notes import summarize
@@ -135,7 +258,7 @@ def load_impl(impl: str):
     src = subprocess.run(["git", "show", "HEAD:pipeline/src/meeting_notes/summarize.py"], cwd=PIPELINE,
                          capture_output=True, text=True, check=True).stdout
     path = PIPELINE / ".pytest_cache" / "summarize_old.py"
-    path.write_text(src.replace("from .config import Config", "from meeting_notes.config import Config"))
+    path.write_text(src.replace("from .config import", "from meeting_notes.config import"))
     spec = importlib.util.spec_from_file_location("summarize_old", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -197,12 +320,18 @@ def main() -> None:
     ap.add_argument("--cases", default="")
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--out")
+    ap.add_argument("--long", help="transcript.json of the 1-hour synthetic meeting (make_long.py)")
     args = ap.parse_args()
     from meeting_notes.config import Config
     from meeting_notes.resources import low_priority
 
     low_priority()
     mod = load_impl(args.impl)
+    if args.long:
+        rows = run_long(mod, args.impl, Path(args.long), args.model, args.runs)
+        if args.out:
+            Path(args.out).write_text(json.dumps(rows, ensure_ascii=False, indent=1))
+        return
     cases = {**CASES, "long_vi": long_case()}
     names = args.cases.split(",") if args.cases else list(cases)
     rows = []
@@ -211,7 +340,8 @@ def main() -> None:
         for run in range(args.runs):
             cfg = Config(ollama_model=args.model, ollama_keep_alive="2m",
                          glossary=["Tuấn", "Minh Anh", "Sarah", "Kubernetes", "Grafana", "Slack"],
-                         summary_chunk_chars=case.get("chunk_chars", 18000))
+                         summary_chunk_chars=case.get("chunk_chars", 18000),
+                         summary_extract_chars=min(case.get("chunk_chars", 18000), Config().summary_extract_chars))
             t0 = time.monotonic()
             if args.impl == "new":
                 lang = mod.summary_language(case["languages"], max(case["languages"], key=case["languages"].get))
