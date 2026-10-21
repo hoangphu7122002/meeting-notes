@@ -206,3 +206,13 @@ uv run python bench/live_reuse_bench.py $S --meeting "$B/<folder>=m1" ... --synt
 Files: `live_corpus.py` (corpora, offline reference), `live_chunks.py` (policy, replay, chunk decode),
 `live_merge.py` (`merge_partials`), `live_eval.py` (metrics), `live_chunk_bench.py` (T3), `live_reuse_bench.py` (T4);
 unit tests in `pipeline/tests/unit/bench/`.
+
+## 10. Shipped code check (2026-10-21)
+
+Design A was built with the section 8 amendments (strict rule, voiced/bleed gate, warm-up). Smoke check of the
+product path on a copy of m3 (40 s, two tracks; one run, memory pressure "warn", on battery, so the replay used
+`live_on_battery` and tolerated "warn" through a scratch probe; the shipped defaults would have skipped/deferred every
+chunk): `meeting-notes live --simulate 4` decoded 2 chunks (10 gated as silent, RTF 0.78 with model load), then
+`process` reused 13.3 s of diarized speech and decoded 7.0 s (tail) after Stop. Transcribe stage 4.2 s vs 8.0 s for a
+fresh offline run; final text 2 of 75 words different from that run (2.7 %, at the live/tail boundary), same speakers.
+Still no >= 10 min corpus and no T2 (load during a call).

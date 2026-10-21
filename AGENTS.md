@@ -13,7 +13,7 @@ transcribes, labels speakers and summarizes on the Mac. User docs: [`README.md`]
 6. **Config keys and env names are public API:** `config.toml` keys, `MEETING_NOTES_*`, `HF_TOKEN`, `MN_PIPELINE_DIR`, Info.plist `MNPipelineDir`/`MNUvPath`, UserDefaults keys under `com.hoangphu.meetingnotes`.
 7. **Do not move `pipeline/`, `models/` or `.env`:** the installed app and configs point at them.
 8. **Build the app only with `scripts/build-app.sh`** (stable local signing identity keeps mic/screen permissions); bundle id `com.hoangphu.meetingnotes`; ad-hoc signing only when asked.
-9. **Never record without a user action.** Meeting detection only offers. The worker is spawned on demand, never at launch or while recording; heavy ML imports stay lazy.
+9. **Never record without a user action.** Meeting detection only offers. The worker is spawned on demand, never at launch or while recording unless the user enabled live transcription (Settings › Recording › Live transcript while recording, default off); heavy ML imports stay lazy.
 10. **English for code, comments, docs.** UI copy lives in `L10n.swift` (Vietnamese default, English). Never commit `build/`, `app/.build`, `models/`, `.venv`, recordings.
 
 ## Layout
@@ -27,8 +27,10 @@ app/Sources/
 app/Tests/               Core + UI tests
 pipeline/src/meeting_notes/
   config/                settings kernel (Config, TOML + env loader, hf_token, redact)
-  domain/                pure: stdlib + numpy/scipy; intervals, signal, speakers, segments, notes rules/markdown, metrics
-  application/           use cases + ports.py (Protocols): process_meeting, summarize_meeting, transcribe_blocks, import_audio
+  domain/                pure: stdlib + numpy/scipy; intervals, signal, speakers, segments, notes rules/markdown, metrics,
+                         live_chunks / live_backlog / partial_merge (live transcription policy)
+  application/           use cases + ports.py (Protocols): process_meeting, summarize_meeting, transcribe_blocks, import_audio,
+                         live_transcribe (live job), live_reuse (Stop-time reuse of live partials)
   adapters/outbound/     one vendor or sink per file: ffmpeg, wav, meeting folder, pyannote, mlx, ollama, hf hub, progress
   adapters/inbound/      commands.py (CLI handlers), worker.py (JSON-lines worker)
   entrypoints/           cli.py (argparse main), wiring.py (dependency factory)
@@ -45,8 +47,9 @@ docs/  models/  build/   research + screenshots; model weights (ignored); app bu
 
 ## Contracts
 
-- **Worker protocol** (`meeting-notes worker`, spawned by `WorkerClient.swift`): stdin JSON lines `{"cmd":"process","job","folder","from","force"}`, `warmup`, `cancel`, `release`, `ping`, `quit`; stdout events (`{"event":"worker",...}`, pipeline events tagged with `job`, `{"event":"job_end","exit":0|1|2|3}`). Python: `adapters/outbound/progress_reporter.py` + `adapters/inbound/worker.py`; Swift: `WorkerEvent.swift`.
-- **Meeting folder** `~/MeetingNotes/<date> <title>/`: `meeting.json` (app writes), `status.json`, `transcript.json`, `.work/`, `notes.md`, `pipeline.log` (pipeline writes), `pipeline.app.log` (app writes), `mic.m4a` `system.m4a` `mixed.m4a`.
+- **Worker protocol** (`meeting-notes worker`, spawned by `WorkerClient.swift`): stdin JSON lines `{"cmd":"process","job","folder","from","force"}`, `warmup`, `cancel`, `release`, `ping`, `quit`; stdout events (`{"event":"worker",...}`, pipeline events tagged with `job`, `{"event":"job_end","exit":0|1|2|3}`). Python: `adapters/outbound/progress_reporter.py` + `adapters/inbound/worker.py`; Swift: `WorkerEvent.swift`, `LiveEvents.swift`.
+- **Live transcription** (opt-in): `ready` carries `"features":["live"]`; stdin `{"cmd":"live","job":"live-<id>","folder"}` runs a long job in the serial loop until `{"cmd":"live_stop","job"}` (also implied by `process`, `quit`, EOF); stdout `{"event":"live_segment","job","track":"mic|system","speaker":"Me|Others","seq","start","end","language","text"}` (one per decoded chunk, re-sent on resume; dedupe by `(track, seq)`) and `{"event":"live_status","job","state":"running|deferred|throttled|stopped","backlog_sec","skipped_sec","rtf","reason"}`, then `job_end`. Jobs with the `live-` prefix are routed to `LiveTranscriber.swift`, others to `JobQueue.swift`; `JobQueue` never starts a process job while recording. The live job tails the WAVs (capture code is unaware of it), keeps whisper loaded for the Stop-time job, and writes only `.work/transcript.partial.jsonl`; `process` reuses a chunk only under the strict rule (natural pause, one speaker, no ambiguous segment), so notes equal the offline path. Design and tests: `docs/research/realtime.md`, `realtime-feasibility.md`.
+- **Meeting folder** `~/MeetingNotes/<date> <title>/`: `meeting.json` (app writes), `status.json`, `transcript.json`, `.work/`, `notes.md`, `pipeline.log` (pipeline writes; `.work/transcript.partial.jsonl` = live partials, removed at finalize), `pipeline.app.log` (app writes), `mic.m4a` `system.m4a` `mixed.m4a`.
 - **App state:** `~/Library/Application Support/MeetingNotes/state.json`; control via `meetingnotes://` URLs or `meeting-notes ctl`.
 
 ## Commands

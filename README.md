@@ -110,6 +110,7 @@ uv run meeting-notes process "<folder>" --force                              # r
 uv run meeting-notes import ~/Downloads/call.mp3 [--title "Weekly sync"]     # notes for any audio/video file
 uv run meeting-notes doctor                                                  # check ffmpeg, Ollama, models, HF access
 uv run meeting-notes setup                                                   # (re)download models
+uv run meeting-notes live "<copy of a folder>" --simulate 4                  # replay a recording through live transcription
 ```
 
 The stages are `prepare → diarize → transcribe → summarize → render → finalize`. Each one saves its output, so a crash or a failed summary can be resumed without redoing the transcription. If Ollama is down, `notes.md` is still written with the transcript and a "Summary unavailable" note; run `process <folder>` again later to add the summary.
@@ -160,11 +161,19 @@ PhoWhisper is **not** the default: in our benchmark it did not beat turbo on Vie
 
 Environment overrides: `MEETING_NOTES_OLLAMA_MODEL`, `MEETING_NOTES_WHISPER_MODEL`, `MEETING_NOTES_DIR`, `MEETING_NOTES_CONFIG`.
 
+### Live transcript (optional, off by default)
+
+**Settings › Recording › Live transcript while recording** shows the last lines ("Me" / "Them") in the expanded pill while you record, about 10–35 s behind. The pipeline worker then runs during the meeting: it tails `mic.wav` / `system.wav` (capture is not changed), cuts each track at pauses, transcribes one chunk at a time with the same whisper model at low priority, and appends the result to `.work/transcript.partial.jsonl`.
+- **After Stop**, chunks that were cut at a natural pause and contain one speaker are reused; everything else (forced cuts, two speakers, the tail, skipped audio) is transcribed as today, so the notes are the same with or without it, only sooner. `transcript.json` gets a `live` key (`reused_sec`, `decoded_sec`).
+- **Cost:** about 1.2 GB more memory while recording (whisper stays loaded into the Stop-time job) and GPU bursts of 1–5 s per chunk. It waits while memory pressure is not normal, CPU is saturated or the Mac is hot, never runs on battery unless `live_on_battery = true`, and skips audio more than `live_max_backlog_sec` behind. The pill then says the live transcript is paused; the notes stay complete.
+- **Config:** `live_min_chunk_sec`, `live_max_chunk_sec`, `live_pause_sec`, `live_max_backlog_sec`, `live_on_battery` (`pipeline/config.example.toml`).
+- **Try it without recording:** `meeting-notes live <copy of a meeting folder> --simulate 4` replays it at 4x and writes the partials into that folder; `process` it afterwards to compare.
+
 ## Performance
 
 The app is built to stay out of the way while you work:
 - **Idle:** about 0% CPU and a few tens of MB of RAM. Nothing is loaded at launch, meeting detection is event-driven (CoreAudio listeners), and no animations run while idle.
-- **Recording:** capture only, no processing during the meeting. Level meters update only while the pill is visible on screen.
+- **Recording:** capture only, no processing during the meeting (unless you turn on the live transcript, below). Level meters update only while the pill is visible on screen.
 - **Processing** runs after Stop, one meeting at a time:
   - **Priority:** nice 10 + utility QoS, with torch/BLAS threads capped at 4.
   - **Models:** whisper and pyannote are unloaded after their stage, and the worker process exits after 1 idle minute. MLX's Metal buffer cache is capped at 256 MB while transcribing (`mlx_cache_limit_mb`); uncapped, GPU memory grew to ~4 GB (model ~1.5 GB) on a 1-hour meeting.
