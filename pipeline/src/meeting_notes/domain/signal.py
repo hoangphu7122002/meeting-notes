@@ -88,7 +88,11 @@ def bleed_ratio(mic: np.ndarray, system: np.ndarray, system_speech: list[Interva
 
 def speech_threshold_db(track: np.ndarray) -> float:
     """Energy threshold for speech on one track: 10 dB above its noise floor, below its loud speech."""
-    db = frame_db(track)
+    return threshold_from_db(frame_db(track))
+
+
+def threshold_from_db(db: np.ndarray) -> float:
+    """`speech_threshold_db` on precomputed frame loudness (live chunking keeps the frame history only)."""
     audible = db[db > -90]
     if audible.size == 0:
         return 0.0
@@ -140,3 +144,12 @@ def speech_spans(chunk: np.ndarray, threshold_db: float, split_gap: float, pad: 
     dur = len(chunk) / SR
     spans = merge_gaps([(max(0.0, s - pad), min(dur, e + pad)) for s, e in merge_gaps(regions, split_gap)], 0.0)
     return [(int(s * SR), int(e * SR)) for s, e in spans]
+
+
+def voiced_seconds(chunk: np.ndarray, threshold_db: float) -> float:
+    """Seconds of loud, pitched frames: the live gate before a chunk is worth a whisper call."""
+    db = frame_db(chunk)
+    if db.size == 0:
+        return 0.0
+    voiced = (db > threshold_db) & (voicing(chunk)[: db.size] > 0.45)
+    return float(voiced.sum()) * FRAME_SEC
