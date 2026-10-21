@@ -1,4 +1,4 @@
-"""Command line: meeting-notes process|import|doctor|setup|worker|ctl. Parses arguments and dispatches."""
+"""Command line: meeting-notes process|live|import|doctor|setup|worker|ctl. Parses arguments and dispatches."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 from ..adapters.inbound.commands import (  # noqa: E402
-    CTL_COMMANDS, cmd_ctl, cmd_doctor, cmd_import, cmd_process, cmd_setup, cmd_worker,
+    CTL_COMMANDS, cmd_ctl, cmd_doctor, cmd_import, cmd_live, cmd_process, cmd_setup, cmd_worker,
 )
 from ..config import Config  # noqa: E402
 from ..domain.stages import STAGES  # noqa: E402
@@ -27,6 +27,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--from", dest="from_stage", choices=STAGES, help="re-run this stage and everything after it")
     p.add_argument("--force", action="store_true", help="re-run every stage")
     p.set_defaults(func=cmd_process)
+
+    p = sub.add_parser("live", help="live transcription of a meeting being recorded (or --simulate a finished one)")
+    p.add_argument("folder")
+    p.add_argument("--simulate", type=float, metavar="SPEED", help="replay a finished recording at SPEED x real time")
+    p.add_argument("--json", action="store_true", help="JSON event lines on stdout")
+    p.set_defaults(func=cmd_live)
 
     p = sub.add_parser("import", help="create a meeting folder from an audio/video file and process it")
     p.add_argument("audio")
@@ -52,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     cfg = Config.load()
-    if args.command in ("process", "import", "worker"):
+    if args.command in ("process", "import", "worker", "live"):
         from ..adapters.outbound.system_resources import apply_priority, limit_threads
 
         limit_threads(cfg.cpu_threads)

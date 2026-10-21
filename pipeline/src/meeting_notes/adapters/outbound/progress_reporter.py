@@ -97,6 +97,11 @@ class Reporter:
                     text += f" ({event['elapsed_sec']:.1f}s)"
             elif event["event"] in ("done", "partial"):
                 text = f"notes: {event.get('notes')}"
+            elif event["event"] == "live_segment":
+                text = f"{event['start']:7.1f}-{event['end']:7.1f} {event['speaker']} [{event['language']}]: {event['text']}"
+            elif event["event"] == "live_status":
+                text = f"{event['state']} backlog {event['backlog_sec']}s skipped {event['skipped_sec']}s rtf {event['rtf']}"
+                text += f" ({event['reason']})" if event.get("reason") else ""
             print(f"[{prefix}] {text}", file=sys.stderr, flush=True)
 
     def check(self) -> None:
@@ -148,6 +153,20 @@ class Reporter:
     def done(self, folder: Path, notes: Path, title: str) -> None:
         self._emit({"event": "done", "folder": str(folder), "notes": str(notes), "title": title, "overall": 1.0,
                     "timings": self.timings, "total_sec": round(time.monotonic() - self._run_t0, 1)})
+
+    def live_segment(self, track: str, speaker: str, seq: int, start: float, end: float, language: str, text: str) -> None:
+        """One decoded live chunk. Never written to the log file (meeting text stays in transcript files)."""
+        log_file, self.log_file = self.log_file, None
+        try:
+            self._emit({"event": "live_segment", "track": track, "speaker": speaker, "seq": seq, "start": round(start, 2),
+                        "end": round(end, 2), "language": language, "text": text})
+        finally:
+            self.log_file = log_file
+
+    def live_status(self, state: str, backlog_sec: float, skipped_sec: float, rtf: float | None,
+                    reason: str | None = None) -> None:
+        self._emit({"event": "live_status", "state": state, "backlog_sec": backlog_sec, "skipped_sec": skipped_sec,
+                    "rtf": rtf, "reason": reason})
 
     def log(self, message: str) -> None:
         """Diagnostic line: log file + stderr, never stdout."""

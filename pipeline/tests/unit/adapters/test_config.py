@@ -9,7 +9,8 @@ FIELDS = [
     "me_name", "mic_speakers", "ollama_url", "ollama_model", "ollama_num_ctx", "ollama_keep_alive",
     "ollama_num_thread", "ollama_timeout_sec", "summary_chunk_chars", "summary_extract_chars", "summary_template",
     "summary_language", "ollama_preload", "priority", "cpu_threads", "diarization_batch_size", "keep_models_warm",
-    "worker_idle_release_min", "keep_wav", "rename_folder",
+    "worker_idle_release_min", "live_min_chunk_sec", "live_max_chunk_sec", "live_pause_sec", "live_max_backlog_sec",
+    "live_on_battery", "keep_wav", "rename_folder",
 ]
 
 

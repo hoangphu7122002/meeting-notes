@@ -71,6 +71,14 @@ class Config:
     # (lowest RAM); True keeps them between meetings until worker_idle_release_min.
     keep_models_warm: bool = False
     worker_idle_release_min: float = 1.0
+    # Live transcription while recording (opt-in in the app: Settings > Recording > Live transcript while recording). Chunks are cut at
+    # pauses >= live_pause_sec, between live_min_chunk_sec and live_max_chunk_sec long; undecoded audio beyond
+    # live_max_backlog_sec is left to the Stop-time pass; on battery live waits unless live_on_battery.
+    live_min_chunk_sec: float = 4.0
+    live_max_chunk_sec: float = 28.0
+    live_pause_sec: float = 0.7
+    live_max_backlog_sec: float = 120.0
+    live_on_battery: bool = False
     # Housekeeping.
     keep_wav: bool = False
     rename_folder: bool = True

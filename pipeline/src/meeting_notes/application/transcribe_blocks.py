@@ -52,11 +52,13 @@ def transcribe_blocks(
     progress: Callable[[float, str], None] | None = None,
     vad: bool = False,
     split_gap: float = 2.0,
+    prior: dict[str, dict[str, float]] | None = None,
 ) -> list[Segment]:
     """Transcribe blocks longest-first so short blocks can borrow their speaker's language.
 
     With `vad`, each block is trimmed to its voiced spans (split at pauses >= `split_gap` s) and blocks
-    without speech are skipped, so whisper never decodes long silence.
+    without speech are skipped, so whisper never decodes long silence. `prior` seeds the per-speaker
+    language seconds (live segments reused at Stop).
     """
     thresholds = {name: speech_threshold_db(x) for name, x in audio_by_track.items()} if vad else {}
 
@@ -67,42 +69,56 @@ def transcribe_blocks(
     blocks = split_by_language(blocks, detect)
     order = sorted(range(len(blocks)), key=lambda i: -blocks[i].duration)
     seconds_by_speaker_lang: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    for speaker, langs in (prior or {}).items():
+        seconds_by_speaker_lang[speaker].update(langs)
     segments: list[Segment] = []
     total_sec = sum(b.duration for b in blocks) or 1.0
     done_sec = 0.0
     for n, i in enumerate(order, 1):
         b = blocks[i]
         done_sec += b.duration
-        if b.duration < MIN_BLOCK_SEC:
-            continue
-        track = audio_by_track[b.track]
-        s0 = max(0, int((b.start - PAD_SEC) * SR))
-        s1 = min(len(track), int((b.end + PAD_SEC) * SR))
-        chunk = np.ascontiguousarray(track[s0:s1], dtype=np.float32)
-        if chunk.size < int(MIN_BLOCK_SEC * SR):
-            continue
-        spans = speech_spans(chunk, thresholds[b.track], split_gap) if vad else [(0, len(chunk))]
-        spans = [(a, z) for a, z in spans if z - a >= int(MIN_BLOCK_SEC * SR)]
-        if not spans:
-            if progress:
-                progress(done_sec / total_sec, f"Transcribing block {n}/{len(blocks)}")
-            continue
-        voiced = np.concatenate([chunk[a:z] for a, z in spans]) if len(spans) > 1 else chunk[spans[0][0]:spans[0][1]]
-        probs = transcriber.detect_language(np.ascontiguousarray(voiced))
-        prior = seconds_by_speaker_lang.get(b.speaker)
-        language = choose_language(probs, allowed, dict(prior) if prior else None, b.duration < SHORT_BLOCK_SEC)
-        for a, z in spans:
-            offset = (s0 + a) / SR
-            for seg in transcriber.transcribe(np.ascontiguousarray(chunk[a:z]), language):
-                text = collapse_repeats(" ".join(seg.get("text", "").split()))
-                if not keep_segment(seg) or is_hallucination(text, b.duration):
-                    continue
-                start = max(b.start, offset + float(seg["start"]))
-                end = min(b.end, offset + float(seg["end"]))
-                if end <= start:
-                    end = min(b.end, start + 0.5)
-                segments.append(Segment(start, max(end, start), b.speaker, b.track, language, text))
-                seconds_by_speaker_lang[b.speaker][language] += end - start
-        if progress:
+        decoded, _ = decode_block(b, audio_by_track[b.track], thresholds.get(b.track, 0.0), transcriber, allowed,
+                                  seconds_by_speaker_lang, vad, split_gap)
+        segments += decoded or []
+        if progress and decoded is not None:
             progress(done_sec / total_sec, f"Transcribing block {n}/{len(blocks)}")
     return sorted(segments, key=lambda s: (s.start, s.end))
+
+
+def decode_block(b: Block, track: np.ndarray, threshold: float, transcriber: Transcriber, allowed: list[str],
+                 seconds_by_speaker_lang: dict[str, dict[str, float]], vad: bool, split_gap: float,
+                 base_sec: float = 0.0) -> tuple[list[Segment] | None, str | None]:
+    """Decode one block (VAD spans, language choice with the speaker prior, glossary prompt, filters).
+
+    `track[0]` is at recorded time `base_sec` (live chunks pass only their padded audio). Updates the prior
+    in place; returns the kept segments (None when the block is too short to look at) and the language
+    (None when nothing was decoded)."""
+    if b.duration < MIN_BLOCK_SEC:
+        return None, None
+    s0 = max(0, int((b.start - PAD_SEC - base_sec) * SR))
+    s1 = min(len(track), int((b.end + PAD_SEC - base_sec) * SR))
+    chunk = np.ascontiguousarray(track[s0:s1], dtype=np.float32)
+    if chunk.size < int(MIN_BLOCK_SEC * SR):
+        return None, None
+    spans = speech_spans(chunk, threshold, split_gap) if vad else [(0, len(chunk))]
+    spans = [(a, z) for a, z in spans if z - a >= int(MIN_BLOCK_SEC * SR)]
+    if not spans:
+        return [], None
+    voiced = np.concatenate([chunk[a:z] for a, z in spans]) if len(spans) > 1 else chunk[spans[0][0]:spans[0][1]]
+    probs = transcriber.detect_language(np.ascontiguousarray(voiced))
+    prior = seconds_by_speaker_lang.get(b.speaker)
+    language = choose_language(probs, allowed, dict(prior) if prior else None, b.duration < SHORT_BLOCK_SEC)
+    segments: list[Segment] = []
+    for a, z in spans:
+        offset = base_sec + (s0 + a) / SR
+        for seg in transcriber.transcribe(np.ascontiguousarray(chunk[a:z]), language):
+            text = collapse_repeats(" ".join(seg.get("text", "").split()))
+            if not keep_segment(seg) or is_hallucination(text, b.duration):
+                continue
+            start = max(b.start, offset + float(seg["start"]))
+            end = min(b.end, offset + float(seg["end"]))
+            if end <= start:
+                end = min(b.end, start + 0.5)
+            segments.append(Segment(start, max(end, start), b.speaker, b.track, language, text))
+            seconds_by_speaker_lang.setdefault(b.speaker, defaultdict(float))[language] += end - start
+    return segments, language

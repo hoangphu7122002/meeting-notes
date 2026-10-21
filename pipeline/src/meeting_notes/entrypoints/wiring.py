@@ -55,14 +55,35 @@ def processor_deps() -> ProcessorDeps:
     from ..adapters.outbound.meeting_folder import MeetingStore
     from ..application.processor_deps import ProcessorDeps
 
+    from ..adapters.outbound.partial_transcript_store import PartialTranscriptFile
+
     return ProcessorDeps(store=MeetingStore(), audio=AudioFiles(), make_models=make_models,
-                         summarize=summarize, preload=preload_llm)
+                         summarize=summarize, preload=preload_llm, partials=PartialTranscriptFile)
 
 
 def make_processor(folder: Path, cfg: Config, reporter: ProgressReporter, models: ManagedModels | None = None) -> Processor:
     from ..application.process_meeting import Processor
 
     return Processor(folder, cfg, reporter, processor_deps(), models)
+
+
+def make_live(folder: Path, cfg: Config, reporter: ProgressReporter, models: ManagedModels | None = None,
+              simulate: float | None = None):
+    """Live transcription use case on the growing WAVs (or a replay at `simulate` x real time)."""
+    from ..adapters.outbound.live_wav_reader import LiveWavSource
+    from ..adapters.outbound.load_probe import SystemLoadProbe
+    from ..adapters.outbound.partial_transcript_store import PartialTranscriptFile
+    from ..application.live_transcribe import PARTIAL_FILE, LiveTranscription
+
+    if simulate:
+        from ..adapters.outbound.audio_files import AudioFiles
+        from ..adapters.outbound.live_replay_source import ReplaySource
+
+        source = ReplaySource(folder, simulate, AudioFiles().decode)
+    else:
+        source = LiveWavSource(folder)
+    store = PartialTranscriptFile(folder / ".work" / PARTIAL_FILE)
+    return LiveTranscription(source, store, models or make_models(cfg, False, reporter.log), SystemLoadProbe(), reporter, cfg)
 
 
 def make_worker() -> Worker:
@@ -123,5 +144,5 @@ def command_deps() -> CommandDeps:
         make_reporter=make_reporter, make_processor=make_processor, import_audio=import_audio, make_llm=make_llm,
         make_worker=make_worker, check_hf_access=check_hf_access, cached_status=cached_status,
         download_model=download_model, warm_diarizer=warm_diarizer, find_ffmpeg=find_ffmpeg,
-        read_app_state=read_app_state, send_app_command=send_app_command,
+        read_app_state=read_app_state, send_app_command=send_app_command, make_live=make_live,
     )

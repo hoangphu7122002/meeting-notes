@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from ..config import Config
-from .ports import AudioIO, MeetingStore, ModelProvider, Summarizer
+from .ports import AudioIO, MeetingStore, ModelProvider, PartialTranscriptStore, Summarizer
 from .transcribe_blocks import transcribe_blocks
 
 
@@ -20,3 +21,4 @@ class ProcessorDeps:
     summarize: Summarizer
     preload: Callable[[Config], object]  # start loading the summary model in the background
     transcribe_blocks: Callable[..., list] = transcribe_blocks
+    partials: Callable[[Path], PartialTranscriptStore] | None = None  # live partials file -> store; None = no reuse

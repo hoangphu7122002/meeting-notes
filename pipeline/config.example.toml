@@ -57,6 +57,15 @@ diarization_batch_size = 8
 keep_models_warm = false    # true: keep whisper/pyannote loaded between queued meetings
 worker_idle_release_min = 1.0
 
+# Live transcript while recording (off by default; enable in the app: Settings > Recording > Live transcript while recording).
+# The worker transcribes each chunk of speech during the meeting at low priority and reuses it after Stop,
+# so less is left to transcribe. It never touches capture; skipped audio is transcribed after Stop as usual.
+live_min_chunk_sec = 4.0      # chunks are cut at the first pause after this many seconds
+live_max_chunk_sec = 28.0     # ... and forced at this length (forced chunks are re-transcribed after Stop)
+live_pause_sec = 0.7          # a pause at least this long ends a chunk
+live_max_backlog_sec = 120.0  # untranscribed audio beyond this is skipped live (oldest first)
+live_on_battery = false       # true: also transcribe live on battery power
+
 # Housekeeping.
 keep_wav = false       # keep raw WAV recordings after the compressed .m4a copies are made
 rename_folder = true   # rename "<date> Meeting" folders after the generated title

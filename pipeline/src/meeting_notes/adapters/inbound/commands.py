@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -37,6 +38,7 @@ class CommandDeps:
     find_ffmpeg: Callable[[], str]
     read_app_state: Callable[[], object]  # raises OSError/ValueError when unavailable
     send_app_command: Callable[[str], int]
+    make_live: Callable[..., object] | None = None  # (folder, cfg, reporter, models=None, simulate=None) -> run(stop)
 
 
 def _report_failure() -> None:
@@ -57,6 +59,27 @@ def cmd_process(args, cfg: Config, deps: CommandDeps) -> int:
     except Exception:
         _report_failure()
         return 1
+    return 0
+
+
+def cmd_live(args, cfg: Config, deps: CommandDeps) -> int:
+    """Live transcription of a meeting folder: tails the WAVs being recorded (Ctrl-C stops), or with
+    --simulate replays a finished recording at that speed. Writes only .work/transcript.partial.jsonl."""
+    folder = Path(args.folder).expanduser()
+    if not folder.is_dir() or deps.make_live is None:
+        print(f"Not a folder: {folder}", file=sys.stderr)
+        return 2
+    stop = threading.Event()
+    reporter = deps.make_reporter(json_mode=args.json)
+    try:
+        stats = deps.make_live(folder, cfg, reporter, simulate=args.simulate).run(stop)
+    except KeyboardInterrupt:
+        stop.set()
+        return 0
+    except Exception:
+        _report_failure()
+        return 1
+    print(json.dumps({"live": stats}), file=sys.stderr)
     return 0
 
 

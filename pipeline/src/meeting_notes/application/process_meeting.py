@@ -30,6 +30,8 @@ from ..domain.stages import STAGES
 from ..domain.timecode import iso_seconds
 from .diarize_tracks import diarize_tracks
 from .errors import Cancelled, PipelineError
+from .live_reuse import plan_reuse
+from .live_transcribe import PARTIAL_FILE
 from .ports import ModelProvider, ProgressReporter
 from .processor_deps import ProcessorDeps
 
@@ -185,12 +187,15 @@ class Processor:
         diar = self.store.read_json(self.m.work / "diarization.json") or {}
         turns = [Turn(**t) for t in diar.get("turns", [])]
         tracks = self._audio()
-        blocks = split_long_blocks(build_blocks(turns), tracks, max_len=self.cfg.whisper_max_chunk_sec)
+        store = self.deps.partials(self.m.work / PARTIAL_FILE) if self.deps.partials and not force else None
+        plan = plan_reuse(turns, store.load() if store else [], self.cfg)  # live partials (strict rule)
+        blocks = split_long_blocks(build_blocks(plan.turns), tracks, max_len=self.cfg.whisper_max_chunk_sec)
         self.r.progress(0.0, f"Loading {self.cfg.whisper_model.split('/')[-1]}")
         transcriber = self.models.transcriber()
         try:
             segments = self.deps.transcribe_blocks(blocks, tracks, transcriber, self.cfg.languages, lambda f, msg: self.r.progress(f, msg),
-                                         vad=self.cfg.whisper_vad, split_gap=self.cfg.vad_split_gap)
+                                                   vad=self.cfg.whisper_vad, split_gap=self.cfg.vad_split_gap, **plan.extra)
+            segments = sorted(plan.reused + segments, key=lambda s: (s.start, s.end)) if plan.reused else segments
         finally:
             self.models.done_with_transcriber()
         stats = language_stats(segments)
@@ -210,6 +215,7 @@ class Processor:
             "whisper_model": self.cfg.whisper_model,
             "pauses": meeting.get("pauses") or [],
             "segments": [s.to_dict() for s in segments],
+            **({"live": plan.live} if plan.live else {}),
         }
         self.store.write_json(out, transcript)
         if not segments:
@@ -268,7 +274,7 @@ class Processor:
                     info["file"] = m4a.name
                     info["start_offset_sec"] = 0.0
             self.store.write_json(self.m.file("meeting.json"), meeting)
-            for p in self.store.glob(self.m.work, "*.16k.wav"):
+            for p in [*self.store.glob(self.m.work, "*.16k.wav"), self.m.work / PARTIAL_FILE]:
                 self.store.unlink(p)
             self.store.unlink(self.m.work / "prepare.json")
         # Rename the folder after the meeting title.

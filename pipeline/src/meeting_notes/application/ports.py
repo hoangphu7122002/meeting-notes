@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:  # annotations only: importing the ports must not load numpy
     import numpy as np
 
+    from ..domain.live_backlog import LoadSample
     from ..domain.speakers import TrackDiarization
 
 
@@ -91,6 +92,52 @@ class ProgressReporter(Protocol):
     def done(self, folder: Path, notes: Path, title: str) -> None: ...
 
     def log(self, message: str) -> None: ...
+
+    def live_segment(self, track: str, speaker: str, seq: int, start: float, end: float, language: str,
+                     text: str) -> None:
+        """One decoded live chunk (its segments joined)."""
+
+    def live_status(self, state: str, backlog_sec: float, skipped_sec: float, rtf: float | None,
+                    reason: str | None = None) -> None:
+        """running | deferred | throttled | stopped."""
+
+
+class LiveAudioSource(Protocol):
+    """The growing tracks of a meeting being recorded (or a replay of a finished one) as 16 kHz audio."""
+
+    def tracks(self) -> list[str]:
+        """Tracks known so far (meeting.json may appear a few seconds after the recording starts)."""
+
+    def poll(self, track: str, max_sec: float) -> tuple[float, np.ndarray]:
+        """(recorded time of the first new sample, new samples), at most `max_sec` of audio; contiguous."""
+
+    def position(self, track: str) -> float:
+        """Recorded time up to which audio exists (polled or not)."""
+
+    def finished(self) -> bool:
+        """No more audio will arrive (end of a replay); a live recording never finishes by itself."""
+
+
+class PartialTranscriptStore(Protocol):
+    """Append-only live partials (`.work/transcript.partial.jsonl`): one JSON object per chunk."""
+
+    def load(self) -> list[dict]:
+        """Every complete line; a truncated or invalid line is ignored."""
+
+    def append(self, chunk: dict) -> None:
+        """Append and fsync one line; raises OSError when the meeting folder is gone."""
+
+
+class LoadProbe(Protocol):
+    def sample(self) -> LoadSample: ...
+
+
+class StopSignal(Protocol):
+    """threading.Event-like: set by `live_stop` (or Ctrl-C in the CLI)."""
+
+    def is_set(self) -> bool: ...
+
+    def wait(self, timeout: float | None = None) -> bool: ...
 
 
 class AudioIO(Protocol):
