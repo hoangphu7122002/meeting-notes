@@ -4,7 +4,7 @@ Date: 2026-10-23. Status: **W1 done, W2 started**: Phase 0 harness (0.1, 0.2a sy
 1.1 mic-track skip, the long-block hallucination fix and 1.2 single encoder pass are built; Phase 4 adaptive
 keep-warm and 2.2 (Ollama unload under pressure) are built, **gains unmeasured**; baseline under "normal"
 pressure, real fixtures (0.2b), the baseline report (0.5), 2.1, 2.3-2.5 are open. 0.3 `diar_bench` and 3.3
-sherpa-onnx (opt-in, not adopted) and 3.4 FluidAudio (opt-in, 3.8-6.7x faster at +0.3 pp DER) are built and measured; keep-warm measured (no gain under warn). Results: sections 7-9. Machine: M1 Pro, 16 GB, macOS 15.5, memory pressure
+sherpa-onnx (opt-in, not adopted) and 3.4 FluidAudio (3.8-6.7x faster at +0.3 pp DER) are built and measured; **FluidAudio is the default diarizer** (bundled helper, pyannote fallback) and Phase 7 M1 is met in dev mode (one-pass `make install`, no HF login); keep-warm measured (no gain under warn). Results: sections 7-9. Machine: M1 Pro, 16 GB, macOS 15.5, memory pressure
 usually "warn" with 16-20 GB swap. Inputs: [`native-backend.md`](../research/native-backend.md),
 [`diarization-alternatives.md`](../research/diarization-alternatives.md),
 [`one-click-install.md`](../research/one-click-install.md), [`live-polish.md`](../research/live-polish.md),
@@ -245,6 +245,13 @@ not the host language, and the ANE path also takes diarization off the GPU that 
   +0.3 pp vs community-1 torch, speaker count right 4/4, **3.8-6.7x faster** (60 min: 286 s -> 43 s), but peak
   memory not lower (Python 1.54 GB + CLI 0.61 GB vs 1.18 GB on 60 min). Passes the default bar except memory and the
   missing vi set (3.2); default stays pyannote until 3.2 and bundling (decision: ship binary + CC-BY notices).
+- **Status 3.4 update (2026-10-23): FluidAudio is the default (user decision, ahead of 3.2).** `diarization_engine`
+  defaults to `"fluidaudio"`; `scripts/build-app.sh` bundles and signs `MeetingNotesDiarize` in `Contents/MacOS` and
+  the app passes its path to the worker (`MEETING_NOTES_DIARIZE_CLI`); lookup: `fluidaudio_cli` override → bundle →
+  `app/.build` → PATH. Fallback chain: helper missing / download or inference error → pyannote (HF_TOKEN) → ungated
+  clustering → VAD; `engine` (what ran) is recorded in `.work/diarization.json` and `transcript.json`.
+  `meeting-notes setup` prefetches the models with progress. Still open: 3.2 vi DER set to confirm the default,
+  CC-BY notices in Settings › About, a FluidAudio mic voice check (drops torch from the diarize stage).
 
 ### Phase 4: warm worker
 
@@ -369,6 +376,12 @@ bundle (PyInstaller) or a Swift-native rewrite would be 2-8 weeks for no signing
 | M6 In-app updater (public releases only) | Poll the public Releases API, download, swap bundle | No re-approval after the first; impossible without a token if releases are private | 1 day |
 | M7 Fresh-Mac acceptance | New macOS user account (or a colleague): dmg → Applications → Open Anyway → Set up → 2 permissions; then update once | Proves the target | 0.5 day |
 
+- **Status (2026-10-23): M1 done for dev installs, differently than planned.** Instead of bundling community-1
+  for torch (3.1), the default diarizer is FluidAudio (ungated weights, no token), so `HF_TOKEN` is optional (pyannote
+  fallback only). `scripts/install.sh` (`make install`) is one idempotent pass: checks, prints the plan, installs
+  missing Homebrew/uv/ffmpeg/Ollama, `uv sync`, builds the helper, `meeting-notes setup` (whisper, embeddings,
+  FluidAudio, Ollama model), `build-app.sh`, `doctor`, next steps; `--dry-run`; refuses to quit a recording app
+  unless `--force`. Dev mode is now 4 steps (Xcode CLT, clone, `make install`, 2 permissions); M2-M7 open.
 - **Expected gain:** 14 → 5-6 steps, no terminal, no HF account, ~15 min wait on 100 Mbps; dmg ~0.1-0.15 GB,
   first-run download ~3.4 GB.
 - **Risk:** medium: runtime downloads from PyPI/GitHub extend AGENTS rule 1; private repo blocks auto-update;

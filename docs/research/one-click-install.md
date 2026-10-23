@@ -4,6 +4,16 @@ Status: research only (no code changed). Date: 2026-10-23. Constraint (user deci
 
 Colleague feedback: "Installing needs too many things, even a Hugging Face login; we want one-click install."
 
+**Update (2026-10-23, implemented): one-pass dev install, no Hugging Face login.** The default diarizer is now
+FluidAudio (Core ML port of community-1, ungated weights, no token; `diarization-alternatives.md` section 8), bundled
+as `MeetingNotesDiarize` in the app; pyannote with `HF_TOKEN` is only a fallback. Steps 9-12 below are gone, and
+steps 2 and 4-8 are one command, `make install` (`scripts/install.sh`): it checks the Mac (macOS 14+, Apple Silicon,
+Xcode CLT, running app), prints what it will install, installs missing Homebrew (official installer)/uv/ffmpeg/Ollama,
+runs `uv sync`, builds the helper, `meeting-notes setup` (whisper, embeddings, FluidAudio, Ollama model), builds and
+installs the app, runs `doctor` and prints the permission steps. Idempotent; `--dry-run` changes nothing; a recording
+MeetingNotes is never quit unless `--force`. A new user now does: Xcode CLT, `git clone`, `make install`, 2
+permissions. The no-terminal dmg path (option B, sections 5-6) is still open.
+
 ## 1. What a new user does today
 
 Source: `README.md`, `scripts/install.sh`, `scripts/build-app.sh`, `scripts/setup-signing.sh`, `meeting-notes setup` (`adapters/inbound/commands.py`), app first run (`PermissionsCard`).

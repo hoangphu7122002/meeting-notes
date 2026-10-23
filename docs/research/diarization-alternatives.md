@@ -201,7 +201,10 @@ Findings:
 4. Against the plan's default bar: DER within +2 pp, speaker count right, >= 5x on 60 min all pass on the
    synthetic set; "no rise in peak memory" fails on this measure, and the vi real-meeting set (3.2) is missing.
 
-**Recommendation:** keep pyannote as the default for now; ship FluidAudio as the opt-in fast engine (committed:
+**Update (2026-10-23): FluidAudio is now the default** (user decision): the helper is bundled in the app, pyannote
+(HF_TOKEN) and the ungated clustering are the fallback chain, and the vi real-meeting check (3.2) is still to do.
+
+**Original recommendation:** keep pyannote as the default for now; ship FluidAudio as the opt-in fast engine (committed:
 `diarization_engine = "fluidaudio"`, `fluidaudio_cli`). Next: run it on the vi real-meeting set (3.2); if it holds,
 bundle the helper (+ CC-BY notices) via `scripts/build-app.sh` and make it the default with pyannote as fallback; a
 FluidAudio-based mic voice check would drop torch from the diarize stage entirely.
