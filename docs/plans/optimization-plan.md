@@ -290,8 +290,11 @@ Polish is a display layer; it never feeds `transcript.json`, notes or the summar
   `live_segment` unchanged; no `.work/transcript.polish.jsonl` (polish is recomputed from the re-announced partials on
   resume). Conservative choices: `ừ` (yes) and sentence-final `à` kept; no "?" for vi question particles; old/new tone
   placement (`hoà`/`hòa`) left as decoded. Unit tests incl. Vietnamese NFD input, tone placement, reduplication.
-  **Not done:** Swift side (`WorkerEvent.livePolish`, `LiveTranscript` polish map, pill raw toggle, Settings toggle,
-  `L10n`), `bench/live_polish_bench.py` (WER/boundary F1/casing acceptance not measured yet).
+  **Swift side built** (2026-10-23): `WorkerEvent.livePolish` / `LivePolish`, `LiveTranscript.polished` map +
+  `displayLines(_:polished:)` (paragraphs replace covered chunks, uncovered tail raw, raw always kept), pill raw toggle,
+  Settings › Recording toggle (UserDefaults `livePolish`, off by default, disabled when live is off, applies from the
+  next live job), `polish` sent only when `ready.features` has `live_polish`.
+  **Not done:** `bench/live_polish_bench.py` (WER/boundary F1/casing acceptance not measured yet).
 
 #### 6.2 Tier 2: LLM strict (opt-in, later)
 
