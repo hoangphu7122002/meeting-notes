@@ -5,8 +5,8 @@ DIR ?= docs/screenshots
 help: ## List targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
 
-install: ## First-time setup: brew deps, uv sync, models, build and install the app
-	scripts/install.sh
+install: ## One-pass setup (idempotent): prerequisites, uv sync, models, app. ARGS=--dry-run|--yes|--force
+	scripts/install.sh $(ARGS)
 
 deps: ## Sync pipeline (uv) and resolve Swift packages
 	cd pipeline && uv sync
@@ -30,7 +30,7 @@ test: ## Pipeline pytest (no e2e) + swift test
 test-e2e: ## Pipeline end-to-end tests
 	cd pipeline && uv run pytest tests/e2e -q
 
-build-app: ## Build, sign and install ~/Applications/MeetingNotes.app
+build-app: ## Build, sign and install ~/Applications/MeetingNotes.app (+ diarization helper)
 	scripts/build-app.sh
 
 previews: ## Render UI previews to PNG (DIR=docs/screenshots)
