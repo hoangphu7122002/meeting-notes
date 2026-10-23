@@ -3,7 +3,12 @@
 # install the app to ~/Applications.
 #
 # Usage: scripts/build-app.sh [--no-install] [--force] [--install-dir DIR] [--pipeline-dir DIR] [--uv-path PATH]
+#                             [--packaged] [--version X] [--out DIR]
 #        --force         quit a running MeetingNotes even while it records (default: refuse; idle apps are quit)
+#        --packaged      release build (scripts/release.sh): bundle the pipeline source (Resources/pipeline) and uv
+#                        (MacOS/uv), Info.plist MNPackaged instead of MNPipelineDir/MNUvPath; implies --no-install
+#        --version       CFBundleShortVersionString (default 0.1.0)
+#        --out           where the bundle is assembled (default build/)
 #        --install-dir   where the app goes (default ~/Applications; install.sh --shared: /Applications)
 #        --pipeline-dir  baked as Info.plist MNPipelineDir (default: this repo's pipeline/)
 #        --uv-path       baked as Info.plist MNUvPath (default: uv on PATH)
@@ -17,7 +22,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_PKG="$ROOT/app"
 BUILD_DIR="$ROOT/build"
-APP="$BUILD_DIR/MeetingNotes.app"
 INSTALL_DIR="$HOME/Applications"
 BUNDLE_ID="com.hoangphu.meetingnotes"
 VERSION="0.1.0"
@@ -28,19 +32,23 @@ HELPER="MeetingNotesDiarize"  # FluidAudio diarization CLI; the app passes its p
 
 PIPELINE_DIR="$ROOT/pipeline"
 UV_PATH=""
+PACKAGED=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-install) INSTALL=0 ;;
     --force) FORCE=1 ;;
-    --install-dir|--pipeline-dir|--uv-path)
+    --packaged) PACKAGED=1; INSTALL=0 ;;
+    --install-dir|--pipeline-dir|--uv-path|--version|--out)
       [[ $# -ge 2 && -n "$2" ]] || { echo "missing value for $1" >&2; exit 64; }
       case "$1" in
         --install-dir) INSTALL_DIR="$2" ;;
         --pipeline-dir) PIPELINE_DIR="$2" ;;
         --uv-path) UV_PATH="$2" ;;
+        --version) VERSION="$2" ;;
+        --out) BUILD_DIR="$2" ;;
       esac
       shift ;;
-    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 64 ;;
   esac
   shift
@@ -57,6 +65,9 @@ if [[ -z "$UV_PATH" ]]; then
   UV_PATH="${UV_PATH:-/opt/homebrew/bin/uv}"
 fi
 BUILD_NUMBER="$(date +%Y%m%d%H%M)"
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "invalid --version $VERSION (expected X.Y.Z)" >&2; exit 64; }
+APP="$BUILD_DIR/MeetingNotes.app"
+if [[ "$PACKAGED" -eq 1 && ! -x "$UV_PATH" ]]; then echo "uv not found at $UV_PATH (needed in the packaged app)" >&2; exit 1; fi
 
 DEST="$INSTALL_DIR/MeetingNotes.app"
 others="$(mn_other_users "$DEST/" | tr '\n' ' ')"
@@ -82,6 +93,23 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/MeetingNotes" "$APP/Contents/MacOS/MeetingNotes"
 cp "$BIN_DIR/$HELPER" "$APP/Contents/MacOS/$HELPER"
+
+if [[ "$PACKAGED" -eq 1 ]]; then
+  # Pipeline source + lockfile only (no .venv, tests, bench, .env, caches); the first-run setup copies it to
+  # ~/Library/Application Support/MeetingNotes/runtime and syncs it there (never inside the signed bundle).
+  mkdir -p "$APP/Contents/Resources/pipeline"
+  for entry in pyproject.toml uv.lock .python-version config.example.toml; do
+    if [[ -f "$PIPELINE_DIR/$entry" ]]; then cp "$PIPELINE_DIR/$entry" "$APP/Contents/Resources/pipeline/"; fi
+  done
+  rsync -a --exclude __pycache__ --exclude '*.pyc' --exclude .DS_Store "$PIPELINE_DIR/src/" "$APP/Contents/Resources/pipeline/src/"
+  cp "$UV_PATH" "$APP/Contents/MacOS/uv"
+  chmod 755 "$APP/Contents/MacOS/uv"
+  cp "$ROOT/scripts/release/THIRD-PARTY-NOTICES.txt" "$APP/Contents/Resources/"
+  LOCATION_KEYS="  <key>MNPackaged</key><true/>"
+else
+  LOCATION_KEYS="  <key>MNPipelineDir</key><string>$(xml_escape "$PIPELINE_DIR")</string>
+  <key>MNUvPath</key><string>$(xml_escape "$UV_PATH")</string>"
+fi
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -109,8 +137,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSMicrophoneUsageDescription</key><string>Meeting Notes records your microphone during meetings you choose to record.</string>
   <key>NSScreenCaptureUsageDescription</key><string>Meeting Notes records system audio (other participants) during meetings you choose to record. No screen content is saved.</string>
   <key>NSAudioCaptureUsageDescription</key><string>Meeting Notes records system audio (other participants) during meetings you choose to record.</string>
-  <key>MNPipelineDir</key><string>$(xml_escape "$PIPELINE_DIR")</string>
-  <key>MNUvPath</key><string>$(xml_escape "$UV_PATH")</string>
+$LOCATION_KEYS
 </dict>
 </plist>
 PLIST
@@ -123,6 +150,9 @@ fi
 echo "==> codesign ($IDENTITY)"
 # Inside out: the helper first (own identifier), then the app, whose seal covers the signed helper.
 codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID.diarize" "$APP/Contents/MacOS/$HELPER"
+if [[ "$PACKAGED" -eq 1 ]]; then
+  codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID.uv" "$APP/Contents/MacOS/uv"
+fi
 codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID" "$APP"
 codesign --verify --strict --deep "$APP"
 

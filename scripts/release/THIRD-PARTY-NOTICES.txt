@@ -1,0 +1,14 @@
+Meeting Notes - third-party components bundled in or downloaded by this app
+
+Bundled in MeetingNotes.app
+- uv (Astral Software Inc.), MIT OR Apache-2.0. https://github.com/astral-sh/uv
+- FluidAudio (FluidInference), Apache-2.0, in MeetingNotesDiarize. https://github.com/FluidInference/FluidAudio
+
+Downloaded on first run (setup wizard), never redistributed in the app
+- Python 3.12 (python-build-standalone via uv), PSF License and bundled licenses.
+- Python packages pinned in pipeline/uv.lock (PyPI), each under its own license (MIT, BSD, Apache-2.0, ...).
+- Whisper weights mlx-community/whisper-large-v3-turbo-q4 (Hugging Face; derived from OpenAI Whisper, MIT).
+- Speaker embedding pyannote/wespeaker-voxceleb-resnet34-LM (Hugging Face), CC-BY-4.0.
+- FluidAudio speaker-diarization Core ML models (FluidInference/speaker-diarization-coreml), CC-BY-4.0,
+  derived from pyannote/speaker-diarization-community-1 (pyannote, CC-BY-4.0).
+- Summary model qwen3:4b or qwen3:8b via Ollama (Alibaba Qwen), Apache-2.0. Ollama itself is installed by the user.
