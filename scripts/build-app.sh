@@ -99,6 +99,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/MeetingNotes" "$APP/Contents/MacOS/MeetingNotes"
 cp "$BIN_DIR/$HELPER" "$APP/Contents/MacOS/$HELPER"
 cp "$BIN_DIR/$LAUNCHER" "$APP/Contents/MacOS/$LAUNCHER"
+cp "$APP_PKG/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"  # regenerate: scripts/make-icon.sh
 # launchd plist for SMAppService.agent(plistName:): each account registers its own copy (gui/<uid> domain).
 mkdir -p "$APP/Contents/Library/LaunchAgents"
 cat > "$APP/Contents/Library/LaunchAgents/$LAUNCHER_LABEL.plist" <<PLIST
@@ -143,6 +144,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>MeetingNotes</string>
   <key>CFBundleDisplayName</key><string>Meeting Notes</string>
   <key>CFBundleExecutable</key><string>MeetingNotes</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>

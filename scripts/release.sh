@@ -111,6 +111,8 @@ run mkdir -p "$DMG_ROOT"
 run ditto "$APP" "$DMG_ROOT/MeetingNotes.app"
 run ln -s /Applications "$DMG_ROOT/Applications"
 run cp "$ROOT/scripts/release/dmg-readme.txt" "$DMG_ROOT/$README_NAME"
+run cp "$ROOT/app/Resources/AppIcon.icns" "$DMG_ROOT/.VolumeIcon.icns"
+run SetFile -a C "$DMG_ROOT" || true  # custom-icon flag (Xcode CLT)
 run rm -f "$DMG"
 run hdiutil create -quiet -volname "Meeting Notes $VERSION" -srcfolder "$DMG_ROOT" -fs HFS+ -format UDZO \
   -imagekey zlib-level=9 -ov "$DMG"
