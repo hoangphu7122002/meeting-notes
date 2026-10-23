@@ -74,7 +74,7 @@ private final class NoopCommands: AppCommands {
     func setDetectionEnabled(_ enabled: Bool) {}
     func setCreateNotesMode(_ mode: CreateNotesMode) {}
     func setSummaryModel(_ model: SummaryModel) {}
-    func setLiveTranscription(_ enabled: Bool) {}
+    func setLiveMode(_ mode: LiveMode) {}
     func chooseNotesFolder() {}
     func resetNotesFolder() {}
     func setShowInDock(_ show: Bool) {}

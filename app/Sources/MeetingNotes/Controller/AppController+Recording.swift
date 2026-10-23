@@ -28,10 +28,12 @@ extension AppController {
             finishRecording()
         case .pauseCapture:
             session?.pause()
+            captioner.recordingPausedOrResumed()
             dismissAutoStop()
             tick()
         case .resumeCapture:
             session?.resume()
+            captioner.recordingPausedOrResumed()
             silence.reset()
             systemSilence.reset()
         case .discardCapture:

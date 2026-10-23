@@ -43,6 +43,8 @@ final class RecordingSession {
     let systemWriter: TrackWriter?
     /// False when system audio could not be started (permission or no display).
     let systemAudioAvailable: Bool
+    /// Live caption taps on the same capture buffers (disabled unless fast captions run).
+    let captionTaps: [CaptionTap]
     private(set) var record: MeetingRecord
     private(set) var warnings: [String]
     var onWarningsChanged: (([String]) -> Void)?
@@ -55,7 +57,8 @@ final class RecordingSession {
     private var finished = false
 
     private init(folder: URL, record: MeetingRecord, clock: RecordingClock, mic: MicRecorder?, micWriter: TrackWriter?,
-                 system: SystemAudioCapture?, systemWriter: TrackWriter?, warnings: [String]) {
+                 system: SystemAudioCapture?, systemWriter: TrackWriter?, captionTaps: [CaptionTap], warnings: [String]) {
+        self.captionTaps = captionTaps
         self.folder = folder
         self.record = record
         self.clock = clock
@@ -75,12 +78,14 @@ final class RecordingSession {
 
         let startedAt = Date()
         let clock = RecordingClock(startHost: HostClock.now())
+        let micTap = CaptionTap(track: "mic", clock: clock)
+        let systemTap = CaptionTap(track: "system", clock: clock)
 
         var mic: MicRecorder?
         var micWriter: TrackWriter?
         if micAllowed {
             let writer = TrackWriter(url: folder.appendingPathComponent("mic.wav"), label: "mic", clock: clock)
-            let recorder = MicRecorder(sink: writer)
+            let recorder = MicRecorder(sink: TeeSink([writer, micTap]))
             do {
                 try recorder.start()
                 mic = recorder
@@ -95,7 +100,7 @@ final class RecordingSession {
         var system: SystemAudioCapture?
         var systemWriter: TrackWriter?
         let writer = TrackWriter(url: folder.appendingPathComponent("system.wav"), label: "system", clock: clock)
-        let capture = SystemAudioCapture(sink: writer)
+        let capture = SystemAudioCapture(sink: TeeSink([writer, systemTap]))
         do {
             try await capture.start()
             system = capture
@@ -111,7 +116,9 @@ final class RecordingSession {
         var record = MeetingRecord(title: options.title, titleSource: options.titleSource, appHint: options.appHint, startedAt: startedAt)
         record.warnings = warnings
         let session = RecordingSession(folder: folder, record: record, clock: clock, mic: mic, micWriter: micWriter,
-                                       system: system, systemWriter: systemWriter, warnings: warnings)
+                                       system: system, systemWriter: systemWriter,
+                                       captionTaps: [mic != nil ? micTap : nil, system != nil ? systemTap : nil].compactMap { $0 },
+                                       warnings: warnings)
         mic?.onWarning = { [weak session] in session?.addWarning($0) }
         system?.onWarning = { [weak session] in session?.addWarning($0) }
         session.writeMeetingJSON()

@@ -54,8 +54,8 @@ struct RecordingSection: View {
                 .frame(height: 26)
             MeterRow(label: tr(.me), levels: state.levels, isMe: true, warning: state.micWarning)
             MeterRow(label: tr(.them), levels: state.levels, isMe: false, warning: state.systemWarning)
-            if let transcript = state.liveTranscript {
-                LiveTranscriptView(transcript: transcript)
+            if state.liveTranscript != nil || state.liveCaptions != nil {
+                LiveTranscriptView(transcript: state.liveTranscript, captions: state.liveCaptions)
             }
             if state.machine.confirmingDiscard {
                 VStack(alignment: .leading, spacing: 8) {

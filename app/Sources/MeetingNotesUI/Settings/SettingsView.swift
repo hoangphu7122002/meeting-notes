@@ -22,7 +22,7 @@ public struct SettingsView: View {
     @State private var stopOnCallEnd: Bool
     @State private var mode: CreateNotesMode
     @State private var model: SummaryModel
-    @State private var liveTranscription: Bool
+    @State private var liveMode: LiveMode
     @State private var livePolish: Bool
     @State private var showInDock: Bool
     @State private var pillMode: PillMode
@@ -49,7 +49,7 @@ public struct SettingsView: View {
         _stopOnCallEnd = State(initialValue: values.stopOnCallEnd)
         _mode = State(initialValue: values.createNotesMode)
         _model = State(initialValue: values.summaryModel)
-        _liveTranscription = State(initialValue: values.liveTranscription)
+        _liveMode = State(initialValue: values.liveMode)
         _livePolish = State(initialValue: values.livePolish)
         _showInDock = State(initialValue: values.showInDock)
         _pillMode = State(initialValue: values.pillMode)
@@ -193,16 +193,19 @@ public struct SettingsView: View {
             }
         }
 
-        Toggle(isOn: $liveTranscription) {
-            SettingLabel(tr(.liveTranscriptionToggle), help: tr(.liveTranscriptionCaption))
+        Picker(selection: $liveMode) {
+            ForEach(LiveMode.allCases, id: \.self) { Text($0.title()).tag($0) }
+        } label: {
+            SettingLabel(tr(.liveModeLabel), help: SettingsRules.liveModeHelp(liveMode, model: state.captionModel),
+                         warning: SettingsRules.liveModeWarning(liveMode, model: state.captionModel))
         }
-        .onChange(of: liveTranscription) { _, value in commands.setLiveTranscription(value) }
+        .onChange(of: liveMode) { _, value in commands.setLiveMode(value) }
 
         Toggle(isOn: $livePolish) {
             SettingLabel(tr(.livePolishToggle), help: tr(.livePolishCaption))
         }
         .padding(.leading, 16)
-        .disabled(!SettingsRules.polishEnabled(live: liveTranscription))
+        .disabled(!SettingsRules.polishEnabled(live: liveMode.live))
         .onChange(of: livePolish) { _, value in Settings.livePolish = value }
 
         Picker(selection: $pillMode) {

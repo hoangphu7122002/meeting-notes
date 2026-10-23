@@ -30,6 +30,10 @@ public final class AppState: ObservableObject {
     @Published public var isBundled = AppInfo.isBundled
     /// Live transcript of the recording in progress; nil = live transcription off or unavailable (hidden).
     @Published public var liveTranscript: LiveTranscript?
+    /// Fast captions (design B) of the recording in progress; nil = mode is not "fast captions" (hidden).
+    @Published public var liveCaptions: LiveCaptions?
+    /// Caption model download/prepare state (Settings help line).
+    @Published public var captionModel: CaptionModelState = .unknown
     /// First-run setup of the packaged app; nil in dev/shared installs (never shown there).
     @Published public var setup: SetupMachine?
     /// Where the bundle runs from (packaged app: a warning unless in an Applications folder).

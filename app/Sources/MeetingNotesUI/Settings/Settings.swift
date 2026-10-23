@@ -28,6 +28,8 @@ public enum Settings {
         public static let showRecordingPill = "showRecordingPill"
         public static let liveTranscription = "liveTranscription"
         public static let livePolish = "livePolish"
+        /// Fast captions (design B) on top of the live transcript; see `LiveMode`.
+        public static let liveCaptions = "liveCaptions"
         /// Read by the launcher agent too (`MeetingLauncher.Key`).
         public static let openForMeetings = MeetingLauncher.Key.openForMeetings
         /// App build (`CFBundleVersion` + path) the launcher agent was last registered for.
@@ -49,6 +51,7 @@ public enum Settings {
             Key.autoStopOnCallEnd: true,
             Key.liveTranscription: false,
             Key.livePolish: false,
+            Key.liveCaptions: true,
             Key.openForMeetings: true,
         ])
     }
@@ -152,6 +155,15 @@ public enum Settings {
     public static var liveTranscription: Bool {
         get { defaults.bool(forKey: Key.liveTranscription) }
         set { defaults.set(newValue, forKey: Key.liveTranscription) }
+    }
+
+    /// Settings › Live transcript: fast captions (default once live is on), accurate (design A only) or off.
+    public static var liveMode: LiveMode {
+        get { LiveMode(live: liveTranscription, captions: defaults.bool(forKey: Key.liveCaptions)) }
+        set {
+            defaults.set(newValue.captionsKey(previous: defaults.bool(forKey: Key.liveCaptions)), forKey: Key.liveCaptions)
+            liveTranscription = newValue.live
+        }
     }
 
     /// Opt-in display-only polish of the live transcript (sent as `"polish":"rules"` when the worker supports it).

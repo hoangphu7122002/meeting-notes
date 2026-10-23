@@ -64,6 +64,10 @@ final class AppController {
     let worker = WorkerClient()
     let jobs: JobQueue
     let live: LiveTranscriber
+    /// Fast captions (design B) on top of the live transcript.
+    let captioner = LiveCaptioner()
+    let memoryPressure = MemoryPressureWatch()
+    var captionGateTimer: Timer?
     /// Pending delayed start of the live transcript.
     var liveStartWork: DispatchWorkItem?
     let detector = MeetingDetector()

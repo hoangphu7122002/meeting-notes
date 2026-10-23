@@ -36,7 +36,7 @@ final class NoCommands: AppCommands {
     func setDetectionEnabled(_ enabled: Bool) {}
     func setCreateNotesMode(_ mode: CreateNotesMode) {}
     func setSummaryModel(_ model: SummaryModel) {}
-    func setLiveTranscription(_ enabled: Bool) {}
+    func setLiveMode(_ mode: LiveMode) {}
     func chooseNotesFolder() {}
     func resetNotesFolder() {}
     func setShowInDock(_ show: Bool) {}
@@ -46,7 +46,7 @@ final class NoCommands: AppCommands {
 
 enum Scenario: String, CaseIterable {
     case idle, firstLaunch = "first-launch", recording, recordingWarning = "recording-warning", paused
-    case recordingLive = "recording-live", liveListening = "recording-live-listening"
+    case recordingLive = "recording-live", liveListening = "recording-live-listening", liveCaptions = "recording-live-captions"
     case discardConfirm = "discard-confirm", processing, ready, error
     case setup, setupOllama = "setup-ollama"
 }
@@ -124,6 +124,15 @@ enum Fixtures {
         return transcript
     }
 
+    /// Fast captions after the last design A line: one confirmed caption and one hypothesis (gray drafts).
+    static func liveCaptions(_ lang: UILanguage) -> LiveCaptions {
+        let vi = lang == .vi
+        var captions = LiveCaptions(phase: .running)
+        captions.apply(line: #"{"event":"caption","track":"mic","seq":12,"start":113,"end":115.5,"final":true,"text":"\#(vi ? "Ok, vậy thứ Tư mình xem lại bản kiểm thử." : "Ok, then we review the test build on Wednesday.")"}"#)
+        captions.apply(line: #"{"event":"caption","track":"system","seq":9,"start":116,"end":117.4,"final":false,"text":"\#(vi ? "Mình sẽ gửi link cho" : "I'll send the link to")"}"#)
+        return captions
+    }
+
     static func state(_ scenario: Scenario, _ lang: UILanguage) -> AppState {
         let state = AppState(notesDir: notesDir, createNotesMode: .rightAway)
         state.isBundled = true
@@ -160,7 +169,7 @@ enum Fixtures {
                 setup.ollama(.missing)
             }
             state.setup = setup
-        case .recording, .recordingWarning, .discardConfirm, .recordingLive, .liveListening:
+        case .recording, .recordingWarning, .discardConfirm, .recordingLive, .liveListening, .liveCaptions:
             state.machine = RecorderMachine(phase: .recording)
             state.pill = .recording
             state.titleDraft = longTitle(lang)
@@ -176,6 +185,10 @@ enum Fixtures {
             }
             if scenario == .recordingLive { state.liveTranscript = liveTranscript(lang, paused: true) }
             if scenario == .liveListening { state.liveTranscript = LiveTranscript(job: "live-preview") }
+            if scenario == .liveCaptions {
+                state.liveTranscript = liveTranscript(lang, paused: false)
+                state.liveCaptions = liveCaptions(lang)
+            }
             if scenario == .discardConfirm {
                 var machine = RecorderMachine(phase: .recording)
                 _ = machine.handle(.requestDiscard)
@@ -218,7 +231,7 @@ enum Fixtures {
         case .basic:
             break
         case .advanced:
-            values.liveTranscription = true
+            values.liveMode = .fast
             values.livePolish = true
         case .attention:
             state.microphone = .denied

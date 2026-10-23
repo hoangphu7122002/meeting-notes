@@ -182,7 +182,7 @@ MainActor.assumeIsolated {
                 renderWindow(scenario, lang: .vi, appearance: appearance, dir: dir)
             }
         }
-        for scenario in [Scenario.idle, .recordingWarning, .recordingLive, .processing] {
+        for scenario in [Scenario.idle, .recordingWarning, .recordingLive, .liveCaptions, .processing] {
             for expanded in [false, true] where wanted("pill-\(scenario.rawValue)") {
                 renderPill(scenario, expanded: expanded, lang: .en, appearance: appearance, dir: dir)
             }

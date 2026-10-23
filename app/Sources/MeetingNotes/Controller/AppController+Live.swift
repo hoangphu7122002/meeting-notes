@@ -1,4 +1,4 @@
-// Opt-in live transcript while recording: worker event routing, start/stop, setting toggle (Controller).
+// Opt-in live transcript while recording: worker event routing, start/stop, fast captions, mode setting (Controller).
 
 import Foundation
 import MeetingNotesCore
@@ -29,7 +29,14 @@ extension AppController {
         live.onChange = { [weak self] transcript in
             guard let self, self.state.liveTranscript != transcript else { return }
             self.state.liveTranscript = transcript
+            self.applyCaptionGate()
         }
+        captioner.onChange = { [weak self] captions in
+            guard let self, self.state.liveCaptions != captions else { return }
+            self.state.liveCaptions = captions
+        }
+        captioner.onModelState = { [weak self] model in self?.state.captionModel = model }
+        if Settings.liveMode == .fast { captioner.refreshModelState() }
     }
 
     /// A recording started: clears the previous transcript and, when the setting is on, starts live
@@ -39,6 +46,7 @@ extension AppController {
         liveStartWork = nil
         live.clear()
         guard Settings.liveTranscription else { return }
+        startCaptionsIfWanted()
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -52,21 +60,48 @@ extension AppController {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
-    /// Stop or discard: asks the live job to end (nothing is sent when live is off).
+    /// Stop or discard: asks the live job to end (nothing is sent when live is off). Captions always disappear.
     func stopLive(hide: Bool = false) {
         liveStartWork?.cancel()
         liveStartWork = nil
         live.stop(hide: hide)
+        stopCaptions()
     }
 
-    /// Settings toggle; applies to the recording in progress too.
-    func setLiveTranscription(_ enabled: Bool) {
-        Settings.liveTranscription = enabled
-        if enabled {
-            guard machine.phase.isActive, !live.isActive, let folder = session?.folder else { return }
-            startLiveSoon(folder: folder, delay: 0.5)
-        } else {
+    /// Settings › Live transcript (fast captions / accurate / off); applies to the recording in progress too.
+    func setLiveMode(_ mode: LiveMode) {
+        Settings.liveMode = mode
+        if mode.captions { captioner.prepareModel() }  // first enable: download now, with progress
+        guard machine.phase.isActive, let folder = session?.folder else { return }
+        if !mode.live {
             stopLive(hide: true)
+            return
         }
+        if !live.isActive { startLiveSoon(folder: folder, delay: 0.5) }
+        if mode.captions { startCaptionsIfWanted() } else { stopCaptions() }
+    }
+
+    // MARK: - Fast captions (design B)
+
+    func startCaptionsIfWanted() {
+        guard Settings.liveMode == .fast, machine.phase.isActive, let session, !captioner.isActive else { return }
+        captioner.start(taps: session.captionTaps)
+        captionGateTimer?.invalidate()
+        captionGateTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applyCaptionGate() }
+        }
+        applyCaptionGate()
+    }
+
+    func stopCaptions() {
+        captionGateTimer?.invalidate()
+        captionGateTimer = nil
+        captioner.stop(hide: true)
+    }
+
+    /// Live pause rules for captions: critical memory pressure, battery, or design A deferring for either.
+    func applyCaptionGate() {
+        captioner.applyGate(memoryCritical: memoryPressure.isCritical, onBattery: !PowerState.onACPower,
+                            liveStatus: state.liveTranscript?.status)
     }
 }

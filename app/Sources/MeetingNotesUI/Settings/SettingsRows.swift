@@ -13,7 +13,7 @@ public struct SettingsValues: Equatable, Sendable {
     public var stopOnCallEnd: Bool
     public var createNotesMode: CreateNotesMode
     public var summaryModel: SummaryModel
-    public var liveTranscription: Bool
+    public var liveMode: LiveMode
     public var livePolish: Bool
     public var showInDock: Bool
     public var pillMode: PillMode
@@ -23,7 +23,7 @@ public struct SettingsValues: Equatable, Sendable {
 
     public init(login: LoginItemState = .off, detection: Bool = true, silenceMinutes: Int = 15, stopOnCallEnd: Bool = true,
                 createNotesMode: CreateNotesMode = .rightAway, summaryModel: SummaryModel = .light,
-                liveTranscription: Bool = false, livePolish: Bool = false, showInDock: Bool = true,
+                liveMode: LiveMode = .off, livePolish: Bool = false, showInDock: Bool = true,
                 pillMode: PillMode = .whileRecording, openForMeetings: Bool = true, launcher: LoginItemState = .off) {
         self.login = login
         self.detection = detection
@@ -31,7 +31,7 @@ public struct SettingsValues: Equatable, Sendable {
         self.stopOnCallEnd = stopOnCallEnd
         self.createNotesMode = createNotesMode
         self.summaryModel = summaryModel
-        self.liveTranscription = liveTranscription
+        self.liveMode = liveMode
         self.livePolish = livePolish
         self.showInDock = showInDock
         self.pillMode = pillMode
@@ -45,7 +45,7 @@ public struct SettingsValues: Equatable, Sendable {
         SettingsValues(login: LoginItem.state, detection: Settings.detectionEnabled,
                        silenceMinutes: Settings.autoStopSilenceMinutes, stopOnCallEnd: Settings.autoStopOnCallEnd,
                        createNotesMode: Settings.createNotesMode, summaryModel: Settings.summaryModel,
-                       liveTranscription: Settings.liveTranscription, livePolish: Settings.livePolish,
+                       liveMode: Settings.liveMode, livePolish: Settings.livePolish,
                        showInDock: Settings.showInDock,
                        pillMode: PillMode(whileRecording: Settings.showRecordingPill, whenIdle: Settings.showIdlePill),
                        openForMeetings: Settings.openForMeetings, launcher: MeetingLauncherItem.state)
