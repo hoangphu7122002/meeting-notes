@@ -11,12 +11,16 @@ if TYPE_CHECKING:  # annotations only: importing the ports must not load numpy
 
     from ..domain.live_backlog import LoadSample
     from ..domain.speakers import TrackDiarization
+    from ..domain.voice_check import VoiceCheck
 
 
 class Diarizer(Protocol):
     cfg: object
 
     def diarize(self, audio: np.ndarray, progress: Callable[[float], None] | None = None) -> TrackDiarization: ...
+
+    def voice_check(self, audio: np.ndarray, exclude: list[tuple[float, float]] | None = None) -> VoiceCheck:
+        """VAD turns + whether the track holds a single voice (True), several (False) or unsure (None)."""
 
     def release(self) -> None: ...
 

@@ -47,6 +47,10 @@ class Config:
     # "auto": several distinct voices on the mic (in-person meeting) get their own labels.
     # "me": everything on the mic track is the user.
     mic_speakers: str = "auto"
+    # True: before diarizing the mic track in full, check with a few voice embeddings whether it holds one
+    # voice; if sure, skip pyannote on it (mic turns come from voice activity; labels stay "Me"). Unsure or
+    # several voices: full diarization, same result as False. With mic_speakers = "me" the check is skipped too.
+    mic_voice_check: bool = True
     # Summary (Ollama, local).
     ollama_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen3:4b"  # qwen3:8b: better summaries, ~2x RAM (see README)

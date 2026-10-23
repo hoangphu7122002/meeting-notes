@@ -19,6 +19,7 @@ from meeting_notes.application.processor_deps import ProcessorDeps
 from meeting_notes.config import Config
 from meeting_notes.domain.signal import energy_vad
 from meeting_notes.domain.speakers import TrackDiarization
+from meeting_notes.domain.voice_check import VoiceCheck
 
 
 @pytest.fixture
@@ -32,6 +33,9 @@ def calls(monkeypatch):
 
         def diarize(self, audio, progress=None):
             return TrackDiarization([(s, e, "0") for s, e in energy_vad(audio)], "vad", [])
+
+        def voice_check(self, audio, exclude=None):  # unsure: full diarization, as before
+            return VoiceCheck([], None, "fake")
 
         def release(self):
             pass

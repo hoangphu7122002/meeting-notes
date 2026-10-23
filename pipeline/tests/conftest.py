@@ -15,6 +15,7 @@ from meeting_notes.application.processor_deps import ProcessorDeps  # noqa: E402
 from meeting_notes.domain.segments import Segment  # noqa: E402
 from meeting_notes.domain.signal import SR, energy_vad  # noqa: E402
 from meeting_notes.domain.speakers import TrackDiarization  # noqa: E402
+from meeting_notes.domain.voice_check import VoiceCheck  # noqa: E402
 
 
 @pytest.fixture
@@ -43,6 +44,9 @@ def stubs(monkeypatch):
         def diarize(self, audio, progress=None):
             regions = energy_vad(audio)
             return TrackDiarization([(s, e, "0") for s, e in regions], "vad", ["pyannote unavailable: gated"])
+
+        def voice_check(self, audio, exclude=None):  # unsure: full diarization, as before
+            return VoiceCheck([], None, "fake")
 
         def release(self):
             pass

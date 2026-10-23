@@ -10,8 +10,10 @@ import numpy as np
 
 from ...config import Config, hf_token, redact
 from ...domain.clustering import cluster_speakers
+from ...domain.intervals import Interval, total
 from ...domain.signal import SR, energy_vad
 from ...domain.speakers import RawTurns, TrackDiarization
+from ...domain.voice_check import VoiceCheck, check_windows, precheck, single_voice
 
 os.environ.setdefault("PYANNOTE_METRICS_ENABLED", "false")
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
@@ -143,6 +145,29 @@ class Diarizer:
         elif self._embedder_error:
             notes.append(f"embedding model unavailable: {self._embedder_error}")
         return TrackDiarization([(s, e, "0") for s, e in regions], "vad", notes)
+
+    def voice_check(self, audio: np.ndarray, exclude: list[Interval] | None = None) -> VoiceCheck:
+        """Cheap single-voice test: energy VAD + a few speaker embeddings, no pyannote pipeline.
+
+        `exclude` = remote speech (system turns), left out of the embeddings so bleed does not count as a voice."""
+        regions = energy_vad(audio)
+        turns: RawTurns = [(s, e, "0") for s, e in regions]
+        if not regions:
+            return VoiceCheck(turns, None, "no speech detected")
+        speech = total(regions)
+        windows = check_windows(regions, exclude)
+        early = precheck(speech, len(windows))
+        if early is not None:  # short speech or too few windows: no embedding model needed
+            return VoiceCheck(turns, *early)
+        embed = self.embedder()
+        if embed is None:
+            return VoiceCheck(turns, None, f"embedding model unavailable: {self._embedder_error}")
+        try:
+            vectors = np.stack([embed(audio[int(s * SR): int(e * SR)]) for s, e in windows])
+        except Exception as exc:
+            return VoiceCheck(turns, None, f"embedding failed: {_short_error(exc)}")
+        verdict, reason = single_voice(vectors, speech)
+        return VoiceCheck(turns, verdict, reason)
 
     def _run_pipeline(self, pipe, audio: np.ndarray, progress) -> RawTurns:
         import torch

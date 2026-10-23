@@ -34,6 +34,9 @@ cluster_threshold = 0.6     # fallback only: lower splits voices more eagerly
 diarization_device = "auto" # auto | mps | cpu
 me_name = "Me"
 mic_speakers = "auto"       # "me": everything on the microphone is you
+# Check with a few voice embeddings whether the microphone holds only your voice; if sure, skip full
+# diarization of the mic track (much faster; labels unchanged). Unsure or several voices: full diarization.
+mic_voice_check = true
 
 # Summary (local Ollama).
 ollama_url = "http://127.0.0.1:11434"
