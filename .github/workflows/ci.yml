@@ -1,0 +1,98 @@
+# Trunk-based CI: every PR and every push to master runs lint + tests on Apple Silicon. Each green push to master
+# also builds an "edge" dmg as a workflow artifact (never a Release). Releases: release.yml (tag vX.Y.Z).
+# Also called by release.yml (workflow_call) so a release runs the same checks first.
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  UV_VERSION: "0.11.17"
+  UV_LOCKED: "1"           # uv run fails if pipeline/uv.lock is stale instead of re-locking
+  HF_HUB_OFFLINE: "1"      # unit tests never download model weights
+  HF_HUB_DISABLE_TELEMETRY: "1"
+
+jobs:
+  checks:
+    name: lint + test
+    runs-on: macos-15  # Apple Silicon
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+      - name: Toolchain
+        id: toolchain
+        run: |
+          swift --version
+          echo "swift=$(swift --version 2>&1 | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/.build
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.swift }}-${{ hashFiles('app/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.swift }}-
+      - name: Sync pipeline
+        working-directory: pipeline
+        run: uv sync
+      - name: make lint-arch
+        run: make lint-arch
+      - name: make lint (arch + swift build)
+        run: make lint
+      - name: make test (pytest without e2e + swift test)
+        run: make test
+
+  edge-dmg:
+    name: edge dmg (artifact)
+    needs: checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: macos-15
+    timeout-minutes: 45
+    concurrency:
+      group: edge-dmg
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # tags, for scripts/version.sh
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Version
+        id: version
+        run: |
+          echo "version=$(scripts/version.sh)" >> "$GITHUB_OUTPUT"
+          echo "label=$(scripts/version.sh --describe)" >> "$GITHUB_OUTPUT"
+      - name: Signing identity
+        env:
+          MACOS_SIGNING_P12_BASE64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
+          MACOS_SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        run: echo "CODESIGN_IDENTITY=$(scripts/ci-signing.sh)" >> "$GITHUB_ENV"
+      - name: Build dmg (not published)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: scripts/release.sh --version "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MeetingNotes-${{ steps.version.outputs.label }}
+          path: |
+            build/release/MeetingNotes-*.dmg
+            build/release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14

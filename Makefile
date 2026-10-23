@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install install-shared deps dev lint lint-arch test test-e2e build-app release previews ci clean
+.PHONY: help install install-shared deps dev lint lint-arch test test-e2e build-app release release-tag version previews ci clean
 DIR ?= docs/screenshots
 
 help: ## List targets
@@ -38,6 +38,12 @@ build-app: ## Build, sign and install ~/Applications/MeetingNotes.app (+ diariza
 
 release: ## Build build/release/MeetingNotes-<version>.dmg (never installs or publishes). ARGS=--dry-run|--version X
 	scripts/release.sh $(ARGS)
+
+release-tag: ## Tag a release on clean, pushed, green master (VERSION=X.Y.Z); prints the push command, never pushes
+	scripts/release-tag.sh $(VERSION)
+
+version: ## Print the version (git tag vX.Y.Z; 0.0.0 before the first tag)
+	@scripts/version.sh
 
 previews: ## Render UI previews to PNG (DIR=docs/screenshots)
 	cd app && swift run MeetingNotesPreviews $(abspath $(DIR))

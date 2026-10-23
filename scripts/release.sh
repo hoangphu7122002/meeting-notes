@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Build the release dmg for newcomers: MeetingNotes-<version>.dmg + SHA256SUMS.txt in build/release/.
 # Never installs, quits or touches /Applications, ~/Applications or a running MeetingNotes, and never uploads:
-# publishing (gh release create) is a manual step from docs/release.md.
+# publishing is CI's job: push a vX.Y.Z tag (make release-tag) and .github/workflows/release.yml publishes it.
 #
 # Usage: scripts/release.sh [--version X.Y.Z] [--dry-run] [--out DIR]
-#   --version  release version (default: pipeline/pyproject.toml version)
+#   --version  release version (default: scripts/version.sh, i.e. the vX.Y.Z tag on HEAD or the latest one)
 #   --dry-run  check the Mac and print every command; build nothing
 #   --out      output directory (default build/release)
 # Env:   CODESIGN_IDENTITY  as for build-app.sh (default: the stable local self-signed identity, so Microphone and
@@ -42,7 +42,7 @@ run() {
 }
 
 if [[ -z "$VERSION" ]]; then
-  VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$ROOT/pipeline/pyproject.toml" | head -n 1)"
+  VERSION="$("$ROOT/scripts/version.sh")"
 fi
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid version '$VERSION' (expected X.Y.Z)"
 case "$OUT" in /*) ;; *) OUT="$ROOT/$OUT" ;; esac
@@ -122,7 +122,7 @@ if [[ "$DRY_RUN" -eq 0 ]]; then
   (cd "$OUT" && shasum -a 256 "$(basename "$DMG")" > SHA256SUMS.txt && cat SHA256SUMS.txt)
   size="$(du -h "$DMG" | awk '{print $1}')"
   echo
-  echo "Built $DMG ($size). Not published. To publish, follow docs/release.md (manual: tag + gh release create)."
+  echo "Built $DMG ($size). Not published (docs/release.md: make release-tag, then push the tag)."
 else
   echo "+ (cd $OUT && shasum -a 256 $(basename "$DMG") > SHA256SUMS.txt)"
   echo

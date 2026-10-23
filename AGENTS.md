@@ -12,7 +12,7 @@ transcribes, labels speakers and summarizes on the Mac. User docs: [`README.md`]
 5. **App-to-pipeline contract is frozen** unless both sides change in one commit with tests (see Contracts).
 6. **Config keys and env names are public API:** `config.toml` keys, `MEETING_NOTES_*` (incl. `MEETING_NOTES_DIARIZE_CLI`, set by the app for its worker), `HF_TOKEN`, `MN_PIPELINE_DIR`, Info.plist `MNPipelineDir`/`MNUvPath`/`MNPackaged`, UserDefaults keys under `com.hoangphu.meetingnotes`, the shared-install marker `shared-install.json` (`pipeline_dir`, `uv_path`, `hf_hub_cache`, `app`) and its default root `/Users/Shared/MeetingNotes`, the packaged runtime `~/Library/Application Support/MeetingNotes/runtime` (marker `"mode": "packaged"`, `setup-state.json`), `meeting-notes setup --only/--json` events.
 7. **Do not move `pipeline/`, `models/` or `.env`:** the installed app and configs point at them.
-8. **Build the app only with `scripts/build-app.sh`** (stable local signing identity keeps mic/screen permissions; it bundles and signs the `MeetingNotesDiarize` helper); bundle id `com.hoangphu.meetingnotes`; ad-hoc signing only when asked. Never quit a recording MeetingNotes: `build-app.sh` and `install.sh` refuse unless `--force`; agents never pass `--force` and never run `make install` / `make install-shared` / `make build-app` end to end without the user (use `scripts/install.sh [--shared] --dry-run`). Never run sudo from scripts (print the command). Releases: `scripts/release.sh` (`build-app.sh --packaged`, never installs) writes the dmg to `build/release/`; tagging, `gh release create` and uploads only on the user's explicit request (`docs/release.md`).
+8. **Build the app only with `scripts/build-app.sh`** (stable local signing identity keeps mic/screen permissions; it bundles and signs the `MeetingNotesDiarize` helper); bundle id `com.hoangphu.meetingnotes`; ad-hoc signing only when asked. Never quit a recording MeetingNotes: `build-app.sh` and `install.sh` refuse unless `--force`; agents never pass `--force` and never run `make install` / `make install-shared` / `make build-app` end to end without the user (use `scripts/install.sh [--shared] --dry-run`). Never run sudo from scripts (print the command). Releases (trunk-based, `docs/release.md`): CI (`.github/workflows/ci.yml`) tests every PR and `master` push and uploads an edge dmg artifact; pushing a tag `vX.Y.Z` on `master` makes `release.yml` publish the GitHub Release. Version = git tag (`scripts/version.sh`). `scripts/release.sh` (`build-app.sh --packaged`, never installs) writes the dmg to `build/release/`. `make release-tag` only tags locally; pushing a tag, `gh release create`, uploads and running the release workflow only on the user's explicit request.
 9. **Never record without a user action.** Meeting detection only offers; the `MeetingNotesLauncher` agent only opens the app (`--opened-for-meeting`: no main window, the detector's launch scan shows the usual prompt). The worker is spawned on demand, never at launch or while recording unless the user enabled live transcription (Settings › Advanced › Show text during the meeting, default off); heavy ML imports stay lazy.
 10. **English for code, comments, docs.** UI copy lives in `L10n.swift` (Vietnamese default, English). Never commit `build/`, `app/.build`, `models/`, `.venv`, recordings.
 
@@ -38,7 +38,7 @@ pipeline/src/meeting_notes/
   adapters/inbound/      commands.py (CLI handlers), worker.py (JSON-lines worker)
   entrypoints/           cli.py (argparse main), wiring.py (dependency factory)
 pipeline/tests/          unit/{domain,application,adapters} architecture/ e2e/ · pipeline/bench/ (pipeline harness + long fixtures, diarization-only bench, asr, summary, live benches) · pipeline/scripts/ (model converter)
-scripts/                 install.sh (one pass, --dry-run, --shared via install-shared.sh) user-setup.sh (per-account step of a shared install) shared/ build-app.sh (--packaged) release.sh + release/ (dmg) app-state.sh setup-signing.sh check-swift-arch.sh
+scripts/                 install.sh (one pass, --dry-run, --shared via install-shared.sh) user-setup.sh (per-account step of a shared install) shared/ build-app.sh (--packaged) release.sh + release/ (dmg) version.sh release-tag.sh ci-signing.sh app-state.sh setup-signing.sh check-swift-arch.sh
 docs/  models/  build/   research + screenshots; model weights (ignored); app bundle output (ignored)
 ```
 
@@ -73,6 +73,8 @@ make test        # pytest (no e2e) + swift test
 make test-e2e    # pipeline e2e
 make build-app   # sign and install ~/Applications/MeetingNotes.app (+ diarization helper)
 make release     # build/release/MeetingNotes-<version>.dmg + SHA256SUMS.txt (ARGS=--dry-run|--version X); never installs or publishes
+make release-tag VERSION=X.Y.Z  # tag clean, pushed, green master locally; prints the push command, never pushes
+make version     # app version from git tags (0.0.0 before the first tag)
 make previews    # render UI PNGs (DIR=docs/screenshots)
 make ci          # lint + test
 make clean       # build/, app/.build, __pycache__ (never models/)

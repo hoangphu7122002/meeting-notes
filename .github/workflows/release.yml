@@ -1,0 +1,126 @@
+# Trunk-based release: master is always releasable; pushing a tag vX.Y.Z that points at a master commit
+# (make release-tag VERSION=X.Y.Z, then git push origin vX.Y.Z) runs the CI checks, builds the dmg with
+# scripts/release.sh and publishes a GitHub Release with the dmg, SHA256SUMS.txt and auto-generated notes.
+# Manual run (Actions > release > Run workflow, on master): publish=false = test build (artifact only);
+# publish=true creates the tag and the Release from the run's commit.
+# Signing: the stable self-signed identity from repo secrets when set, else ad-hoc (docs/release.md, Signing).
+name: release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version X.Y.Z (tag vX.Y.Z)"
+        required: true
+        type: string
+      publish:
+        description: "Create tag vX.Y.Z + GitHub Release (off: test build, workflow artifact only)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  dmg:
+    name: build dmg
+    needs: checks
+    runs-on: macos-15  # Apple Silicon
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      signing: ${{ steps.signing.outputs.signing }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # master history + tags for the checks below
+      - name: Resolve version (tag or input) and check the commit is on master
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then v="${GITHUB_REF_NAME#v}"; else v="${INPUT_VERSION#v}"; fi
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::invalid version '$v' (expected X.Y.Z)"; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/master \
+            || { echo "::error::$GITHUB_SHA is not on master: releases are cut from master only"; exit 1; }
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && "$PUBLISH" == true ]]; then
+            [[ "$GITHUB_REF" == refs/heads/master ]] || { echo "::error::publish only from master"; exit 1; }
+            if git rev-parse -q --verify "refs/tags/v$v" >/dev/null; then
+              echo "::error::tag v$v already exists"; exit 1
+            fi
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.17"
+      - name: Signing identity
+        id: signing
+        env:
+          MACOS_SIGNING_P12_BASE64: ${{ secrets.MACOS_SIGNING_P12_BASE64 }}
+          MACOS_SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        run: |
+          identity="$(scripts/ci-signing.sh)"
+          echo "CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          if [[ "$identity" == "-" ]]; then echo "signing=adhoc" >> "$GITHUB_OUTPUT"; else echo "signing=stable" >> "$GITHUB_OUTPUT"; fi
+      - name: Build dmg
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: scripts/release.sh --version "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MeetingNotes-${{ steps.version.outputs.version }}
+          path: |
+            build/release/MeetingNotes-*.dmg
+            build/release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: GitHub Release
+    needs: dmg
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: MeetingNotes-${{ needs.dmg.outputs.version }}
+          path: dist
+      - name: Release notes header
+        env:
+          VERSION: ${{ needs.dmg.outputs.version }}
+          SIGNING: ${{ needs.dmg.outputs.signing }}
+        run: |
+          {
+            echo "## Install"
+            echo
+            echo "1. Download \`MeetingNotes-$VERSION.dmg\`, open it and drag MeetingNotes to Applications."
+            echo "2. Open it once; macOS blocks it (self-signed, not notarized): System Settings › Privacy & Security › **Open Anyway**."
+            echo "3. Press **Cài đặt / Set up** (downloads ~3.4 GB: Python, models), then allow Microphone and Screen & System Audio Recording."
+            echo
+            if [[ "$SIGNING" == adhoc ]]; then
+              echo "> This build is ad-hoc signed: after updating from an earlier version, macOS asks for Microphone and Screen & System Audio again."
+              echo
+            fi
+            echo "Verify: \`shasum -a 256 -c SHA256SUMS.txt\`"
+          } > notes.md
+      - name: Create the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.dmg.outputs.version }}
+        run: |
+          gh release create "v$VERSION" dist/MeetingNotes-"$VERSION".dmg dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Meeting Notes $VERSION" \
+            --notes-file notes.md --generate-notes

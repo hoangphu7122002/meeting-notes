@@ -1,5 +1,7 @@
 # Meeting Notes
 
+[![ci](https://github.com/hoangphu7122002/meeting-notes/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/hoangphu7122002/meeting-notes/actions/workflows/ci.yml)
+
 Local-only macOS meeting recorder. It records your mic and the other participants (system audio via ScreenCaptureKit), transcribes with mlx-whisper, labels speakers, and writes a summary with decisions and action items using a local Ollama model. Nothing leaves the Mac: the only network traffic is downloading open model weights (Hugging Face, Ollama registry).
 
 - **App** (`app/`, Swift/SwiftUI): recording, floating pill, Dock/menu bar icons, hotkeys, notes viewer. Vietnamese (default) or English UI.
@@ -12,7 +14,7 @@ Local-only macOS meeting recorder. It records your mic and the other participant
 3. Press **Cài đặt / Set up**: the app downloads ~3.4 GB itself (Python, models) and guides you to install [Ollama](https://ollama.com/download) if missing. No Hugging Face account.
 4. Allow Microphone and Screen & System Audio Recording.
 
-Maintainers: [docs/release.md](docs/release.md).
+Maintainers: trunk-based; CI tests every PR and `master` push, and pushing a tag `vX.Y.Z` (`make release-tag VERSION=X.Y.Z`) publishes the dmg ([docs/release.md](docs/release.md)).
 
 ## Requirements
 
