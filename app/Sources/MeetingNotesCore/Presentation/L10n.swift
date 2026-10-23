@@ -147,6 +147,8 @@ public enum Tr: String, CaseIterable, Sendable {
     case createNotesLabel, modeRightAway, modeWhenIdle, modeManual, helpRightAway, helpWhenIdle, helpManual
     case summaryModelLabel, modelLight, modelBetter, helpSummary, helpSummaryLowMemory, saveLocation
     case liveTranscriptionToggle, liveTranscriptionCaption, livePolishToggle, livePolishCaption, liveShowRaw, liveShowPolished
+    case liveModeLabel, liveModeFast, liveModeAccurate, liveModeOff, helpLiveFast, helpLiveAccurate, helpLiveOff
+    case captionsDownloading, captionsPreparing, captionsFailed, captionsDraftHelp
     case pillLabel, pillWhileRecording, pillAlways, pillNever, helpPill, helpPillNever, actionResetPosition
     case showInDock, helpDock, version, openForMeetings, helpOpenForMeetings
 
@@ -500,6 +502,17 @@ public enum Tr: String, CaseIterable, Sendable {
         case .version: return ("Phiên bản", "Version")
         case .openForMeetings: return ("Tự mở app khi vào họp", "Open the app when a meeting starts")
         case .helpOpenForMeetings: return ("Mở và hỏi ghi khi Zoom, Meet… bắt đầu, kể cả sau khi Thoát. Tắt để ngừng.", "Opens and asks to record when Zoom, Meet… start, even after Quit. Turn off to stop.")
+        case .liveModeLabel: return ("Chép lời trực tiếp", "Live transcript")
+        case .liveModeFast: return ("Phụ đề nhanh", "Fast captions")
+        case .liveModeAccurate: return ("Chính xác", "Accurate")
+        case .liveModeOff: return ("Tắt", "Off")
+        case .helpLiveFast: return ("Chữ xám hiện sau ~1–2 giây, rồi được thay bằng bản chính xác. Lần đầu tải ~%1 MB. Ghi chú sau họp không đổi.", "Gray text after ~1–2 s, then replaced by the accurate text. Downloads ~%1 MB once. Notes do not change.")
+        case .helpLiveAccurate: return ("Chữ hiện sau 10–35 giây. Chỉ chạy khi cắm sạc, tốn thêm RAM. Ghi chú sau họp không đổi.", "Text appears 10–35 s later. Runs only when plugged in and uses more memory. Notes do not change.")
+        case .helpLiveOff: return ("Không hiện chữ khi đang họp; ghi chú vẫn tạo sau khi dừng.", "No text during the meeting; notes are still made after Stop.")
+        case .captionsDownloading: return ("Đang tải mô hình phụ đề… %1%", "Downloading the caption model… %1%")
+        case .captionsPreparing: return ("Đang chuẩn bị phụ đề (lần đầu ~1 phút)…", "Preparing captions (about a minute the first time)…")
+        case .captionsFailed: return ("Phụ đề nhanh không chạy được (%1); vẫn chép lời chính xác.", "Fast captions are unavailable (%1); the accurate transcript still runs.")
+        case .captionsDraftHelp: return ("Bản nháp: sẽ được thay bằng bản chính xác", "Draft: will be replaced by the accurate text")
         case .liveShowRaw: return ("Xem bản gốc", "Show raw")
         case .liveShowPolished: return ("Xem bản đã làm gọn", "Show tidied")
 

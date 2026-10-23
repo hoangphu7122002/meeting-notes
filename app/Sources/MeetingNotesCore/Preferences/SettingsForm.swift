@@ -2,6 +2,7 @@
 // Pure so the window's states are unit-tested; the SwiftUI view only renders what this decides.
 
 import Foundation
+import MeetingNotesCaptionKit
 
 /// Floating control visibility: one picker over the two stored flags `showRecordingPill` + `showIdlePill`.
 public enum PillMode: String, CaseIterable, Sendable {
@@ -186,6 +187,27 @@ public enum SettingsRules {
     }
 
     public static func polishEnabled(live: Bool) -> Bool { live }
+
+    /// Help line under "Live transcript": the mode's description, or the caption model's download progress/failure.
+    public static func liveModeHelp(_ mode: LiveMode, model: CaptionModelState, lang: UILanguage = L10n.language) -> String {
+        if mode == .fast {
+            switch model {
+            case let .preparing(fraction):
+                guard let fraction, fraction < 0.85 else { return tr(.captionsPreparing, lang: lang) }
+                return tr(.captionsDownloading, lang: lang, Int((fraction / 0.85 * 100).rounded()))
+            case let .failed(message):
+                return tr(.captionsFailed, lang: lang, message)
+            default:
+                return tr(.helpLiveFast, lang: lang, CaptionModels.downloadMB(CaptionModels.defaultModel))
+            }
+        }
+        return tr(mode.help, lang: lang)
+    }
+
+    public static func liveModeWarning(_ mode: LiveMode, model: CaptionModelState) -> Bool {
+        if mode == .fast, case .failed = model { return true }
+        return false
+    }
 
     /// "Reset position" shows the pill; pointless (and surprising) when the user hid it for good.
     public static func resetPillPositionEnabled(_ mode: PillMode) -> Bool { mode != .never }

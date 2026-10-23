@@ -103,10 +103,20 @@ public struct LiveTranscript: Equatable, Sendable {
     }
 }
 
-/// One line of the live view: a raw chunk or a polished paragraph.
+/// One line of the live view: a raw chunk, a polished paragraph or a fast caption (`isDraft`, design B).
 public struct LiveLine: Equatable, Sendable, Identifiable {
     public let id: String
     public let isMe: Bool
     public let start: Double
     public let text: String
+    /// A fast caption not yet replaced by design A's text (shown gray).
+    public let isDraft: Bool
+
+    public init(id: String, isMe: Bool, start: Double, text: String, isDraft: Bool = false) {
+        self.id = id
+        self.isMe = isMe
+        self.start = start
+        self.text = text
+        self.isDraft = isDraft
+    }
 }
