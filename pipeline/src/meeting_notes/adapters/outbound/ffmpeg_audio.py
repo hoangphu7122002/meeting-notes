@@ -52,5 +52,8 @@ def encode_m4a(inputs: list[tuple[Path, float]], dest: Path, bitrate: str = "64k
 
 
 def find_ffmpeg() -> str:
-    """Path of ffmpeg for `doctor`: PATH, then Homebrew, else "MISSING" (never raises)."""
-    return shutil.which("ffmpeg") or ("/opt/homebrew/bin/ffmpeg" if Path("/opt/homebrew/bin/ffmpeg").exists() else "MISSING")
+    """Path of ffmpeg for `doctor`: PATH, then Homebrew, else the afconvert fallback note (never raises)."""
+    try:
+        return ffmpeg_bin()
+    except RuntimeError:
+        return "not installed: using macOS afconvert (webm/mkv imports need ffmpeg)"
