@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -12,22 +11,6 @@ import numpy as np
 
 from .signal import SR, frame_db
 from .speakers import Block
-
-
-# Phrases Whisper is known to hallucinate on silence/noise (YouTube outro boilerplate).
-HALLUCINATIONS = [
-    "hẹn gặp lại các bạn trong những video tiếp theo",
-    "cảm ơn các bạn đã theo dõi",
-    "hãy subscribe cho kênh",
-    "đăng ký kênh",
-    "ghiền mì gõ",
-    "la la school",
-    "thanks for watching",
-    "thank you for watching",
-    "please subscribe",
-    "subtitles by",
-    "amara.org",
-]
 
 
 @dataclass
@@ -46,21 +29,6 @@ class Segment:
         }
 
 
-def normalize(text: str) -> str:
-    text = unicodedata.normalize("NFC", text.lower())
-    return re.sub(r"[^\w\s]", "", text).strip()
-
-
-def is_hallucination(text: str, block_sec: float) -> bool:
-    norm = normalize(text)
-    if not norm:
-        return True
-    for phrase in HALLUCINATIONS:
-        if phrase in norm and (len(norm) <= len(phrase) + 20 or block_sec < 8):
-            return True
-    return False
-
-
 _REPEAT = re.compile(r"(?i)\b((?:\S+\s+){0,5}?\S+?)(?:[\s,.;!?]+\1\b){3,}")
 
 
@@ -70,14 +38,6 @@ def collapse_repeats(text: str) -> str:
     while prev != text:
         prev, text = text, _REPEAT.sub(r"\1", text)
     return text
-
-
-def keep_segment(seg: dict) -> bool:
-    if seg.get("compression_ratio", 0) > 2.6:
-        return False
-    if seg.get("no_speech_prob", 0) > 0.6 and seg.get("avg_logprob", 0) < -0.7:
-        return False
-    return True
 
 
 def split_long_blocks(blocks: list[Block], audio_by_track: dict[str, np.ndarray], max_len: float = 45.0) -> list[Block]:

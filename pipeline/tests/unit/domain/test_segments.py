@@ -1,6 +1,6 @@
 import numpy as np
 
-from meeting_notes.domain.segments import (Segment, choose_language, collapse_repeats, is_hallucination, keep_segment,
+from meeting_notes.domain.segments import (Segment, choose_language, collapse_repeats,
                                            split_by_language, split_long_blocks)
 from meeting_notes.domain.signal import SR
 from meeting_notes.domain.speakers import Block
@@ -14,16 +14,6 @@ def test_choose_language_restricted_to_allowed():
 def test_short_block_uses_speaker_prior():
     assert choose_language({"en": 0.6, "vi": 0.4}, ["vi", "en"], {"vi": 30.0}, short=True) == "vi"
     assert choose_language({"en": 0.95, "vi": 0.05}, ["vi", "en"], {"vi": 30.0}, short=True) == "en"
-
-
-def test_hallucination_filter():
-    assert is_hallucination("Hẹn gặp lại các bạn trong những video tiếp theo!", 3)
-    assert is_hallucination("Thanks for watching.", 1.5)
-    assert is_hallucination("   ", 5)
-    assert not is_hallucination("Chúng ta sẽ phát hành vào thứ sáu.", 3)
-    assert not keep_segment({"compression_ratio": 3.0})
-    assert not keep_segment({"no_speech_prob": 0.9, "avg_logprob": -1.2})
-    assert keep_segment({"no_speech_prob": 0.1, "avg_logprob": -0.3, "compression_ratio": 1.4})
 
 
 def test_split_long_blocks_cuts_at_quiet_point():

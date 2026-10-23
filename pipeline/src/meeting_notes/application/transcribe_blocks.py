@@ -9,8 +9,8 @@ import numpy as np
 
 from ..config import Config
 from ..domain.glossary import glossary_entries
-from ..domain.segments import (Segment, choose_language, collapse_repeats, is_hallucination, keep_segment,
-                               split_by_language)
+from ..domain.hallucination import is_hallucination, keep_segment
+from ..domain.segments import Segment, choose_language, collapse_repeats, split_by_language
 from ..domain.signal import SR, speech_spans, speech_threshold_db
 from ..domain.speakers import Block
 from .ports import Transcriber
@@ -113,7 +113,8 @@ def decode_block(b: Block, track: np.ndarray, threshold: float, transcriber: Tra
         offset = base_sec + (s0 + a) / SR
         for seg in transcriber.transcribe(np.ascontiguousarray(chunk[a:z]), language):
             text = collapse_repeats(" ".join(seg.get("text", "").split()))
-            if not keep_segment(seg) or is_hallucination(text, b.duration):
+            seg_sec = float(seg["end"]) - float(seg["start"])
+            if not keep_segment(seg) or is_hallucination(text, b.duration, seg_sec):
                 continue
             start = max(b.start, offset + float(seg["start"]))
             end = min(b.end, offset + float(seg["end"]))
