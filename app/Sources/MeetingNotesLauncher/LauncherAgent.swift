@@ -13,6 +13,7 @@ final class LauncherAgent {
     private var debounce = Debounce(delay: 2)
     private var pendingLaunches: [String] = []
     private var micPending = false
+    private var retry = CooldownRetry()
     private var observers: [NSObjectProtocol] = []
 
     init(appURL: URL, dryRun: Bool) {
@@ -37,7 +38,13 @@ final class LauncherAgent {
             self?.micPending = true
             self?.schedule()
         }
+        mic.onStopped = { [weak self] in self?.retry.cancel() }
         mic.start()
+        if let trigger = MeetingLaunchPolicy.startupTrigger(micRunning: mic.isRunning,
+                                                            captureBundleIDs: MicMonitor.captureBundleIDs) {
+            log.info("microphone already in use at start: checking once")
+            evaluate([trigger])
+        }
         log.info("watching for meetings (app \(self.appURL.path, privacy: .public), dry run \(self.dryRun))")
     }
 
@@ -58,6 +65,10 @@ final class LauncherAgent {
             triggers.append(.micStarted(captureBundleIDs: MicMonitor.captureBundleIDs()))
         }
         micPending = false
+        evaluate(triggers)
+    }
+
+    private func evaluate(_ triggers: [LaunchTrigger]) {
         guard !triggers.isEmpty else { return }
         let prefs = Self.readPrefs()
         let running = appIsRunning
@@ -66,12 +77,28 @@ final class LauncherAgent {
             switch decision {
             case .launch(let app):
                 log.info("\(app, privacy: .public) started a meeting: opening MeetingNotes")
+                retry.cancel()
                 open()
                 return
             case .skip(let reason):
                 log.debug("\(String(describing: trigger), privacy: .public): skip (\(reason.rawValue, privacy: .public))")
+                if let due = policy.retryDate(after: decision) { scheduleRetry(at: due) }
             }
         }
+    }
+
+    /// A cooldown hid a meeting: re-check at its expiry while the microphone stays on (no new edge would come).
+    private func scheduleRetry(at due: Date) {
+        guard mic.isRunning, let armed = retry.schedule(at: due) else { return }
+        log.debug("re-checking the microphone in \(Int(max(0, armed.timeIntervalSinceNow).rounded()))s")
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, armed.timeIntervalSinceNow) + 0.05) { [weak self] in
+            self?.retryFired()
+        }
+    }
+
+    private func retryFired() {
+        guard retry.fire(at: Date()), mic.isRunning else { return }
+        evaluate([.micStarted(captureBundleIDs: MicMonitor.captureBundleIDs())])
     }
 
     private var appIsRunning: Bool {

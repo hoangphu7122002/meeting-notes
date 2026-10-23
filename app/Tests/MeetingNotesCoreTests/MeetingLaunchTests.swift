@@ -67,6 +67,66 @@ struct MeetingLaunchTests {
         #expect(policy.decide(chromeMic, appRunning: false, prefs: LauncherPrefs(), now: t0.addingTimeInterval(300)) == .launch(app: "Chrome"))
     }
 
+    @Test func defaultsOpenForANewMeetingRightAway() {
+        var policy = MeetingLaunchPolicy()
+        #expect(policy.cooldown == 15 && policy.quitGrace == 0)
+        // Quit, then join a meeting moments later: no post-quit hold.
+        policy.appExited(at: t0)
+        #expect(policy.evaluate(chromeMic, appRunning: false, prefs: LauncherPrefs(), now: t0.addingTimeInterval(1)) == .launch(app: "Chrome"))
+        // A duplicate trigger while that launch is still starting is suppressed, briefly.
+        #expect(policy.decide(zoomLaunch, appRunning: false, prefs: LauncherPrefs(), now: t0.addingTimeInterval(5)) == .skip(.cooldown))
+        // Opened, then quit by the user mid-meeting: the launch cooldown no longer applies.
+        policy.appExited(at: t0.addingTimeInterval(6))
+        #expect(policy.decide(chromeMic, appRunning: false, prefs: LauncherPrefs(), now: t0.addingTimeInterval(7)) == .launch(app: "Chrome"))
+    }
+
+    @Test func timeBasedSkipsReportWhenToRetry() {
+        var policy = MeetingLaunchPolicy(cooldown: 600, quitGrace: 30)
+        _ = policy.evaluate(zoomLaunch, appRunning: false, prefs: LauncherPrefs(), now: t0)
+        let cooled = policy.decide(chromeMic, appRunning: false, prefs: LauncherPrefs(), now: t0.addingTimeInterval(60))
+        #expect(cooled == .skip(.cooldown))
+        #expect(policy.retryDate(after: cooled) == t0.addingTimeInterval(600))
+        policy.appExited(at: t0.addingTimeInterval(100))
+        let quit = policy.decide(chromeMic, appRunning: false, prefs: LauncherPrefs(), now: t0.addingTimeInterval(110))
+        #expect(quit == .skip(.recentlyQuit))
+        #expect(policy.retryDate(after: quit) == t0.addingTimeInterval(130))
+        #expect(policy.decide(chromeMic, appRunning: false, prefs: LauncherPrefs(), now: t0.addingTimeInterval(130)) == .launch(app: "Chrome"))
+        // Not time-based: nothing to retry.
+        #expect(policy.retryDate(after: .skip(.appRunning)) == nil)
+        #expect(policy.retryDate(after: .skip(.notAMeeting)) == nil)
+        #expect(policy.retryDate(after: .launch(app: "Zoom")) == nil)
+    }
+
+    @Test func cooldownRetryKeepsOneTimer() {
+        var retry = CooldownRetry()
+        let first = retry.schedule(at: t0.addingTimeInterval(30))
+        let same = retry.schedule(at: t0.addingTimeInterval(30))
+        let moved = retry.schedule(at: t0.addingTimeInterval(40))
+        #expect(first == t0.addingTimeInterval(30))
+        #expect(same == nil)  // same deadline: no second timer
+        #expect(moved == t0.addingTimeInterval(40))
+        let stale = retry.fire(at: t0.addingTimeInterval(30))
+        let due = retry.fire(at: t0.addingTimeInterval(40))
+        let again = retry.fire(at: t0.addingTimeInterval(41))
+        #expect(!stale)  // the stale timer does nothing
+        #expect(due)
+        #expect(!again)  // fired once
+        _ = retry.schedule(at: t0.addingTimeInterval(50))
+        retry.cancel()  // microphone stopped
+        let cancelled = retry.fire(at: t0.addingTimeInterval(50))
+        #expect(!cancelled)
+    }
+
+    @Test func micAlreadyOnAtStartCountsOnce() {
+        var read = false
+        let idle = MeetingLaunchPolicy.startupTrigger(micRunning: false, captureBundleIDs: { read = true; return ["us.zoom.xos"] })
+        #expect(idle == nil)
+        #expect(!read)  // idle microphone: no process scan
+        #expect(MeetingLaunchPolicy.startupTrigger(micRunning: true, captureBundleIDs: { ["com.google.Chrome.helper"] }) == chromeMic)
+        #expect(MeetingLaunchPolicy.startupTrigger(micRunning: true, captureBundleIDs: { ["com.apple.VoiceMemos"] }) == nil)
+        #expect(MeetingLaunchPolicy.startupTrigger(micRunning: true, captureBundleIDs: { ["com.hoangphu.meetingnotes"] }) == nil)
+    }
+
     @Test func settingsGateTheLauncher() {
         let policy = MeetingLaunchPolicy()
         #expect(policy.decide(zoomLaunch, appRunning: false, prefs: LauncherPrefs(openForMeetings: false), now: t0) == .skip(.disabled))

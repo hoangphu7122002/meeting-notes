@@ -71,16 +71,19 @@ public enum LaunchDecision: Equatable, Sendable {
     }
 }
 
-/// Decides whether a trigger opens MeetingNotes. Never opens it while it runs, for its own microphone use,
-/// twice within `cooldown`, or right after the user quit it (`quitGrace`: the app's own mic release and an
-/// immediate mute/unmute must not bring it back).
+/// Decides whether a trigger opens MeetingNotes. A meeting starting must bring up the record prompt right away,
+/// so the only guards are: never while the app runs, never for its own microphone use, and no duplicate open
+/// while a just-requested launch is still starting (`cooldown`, a few seconds). A quit after the last launch ends
+/// that cooldown; `quitGrace` (default 0: off) can hold the launcher back after a quit. Time-based skips report
+/// when they expire (`retryDate`) so the launcher re-checks a meeting whose microphone stays on (no new rising
+/// edge would ever come).
 public struct MeetingLaunchPolicy: Sendable {
     public var cooldown: TimeInterval
     public var quitGrace: TimeInterval
     public private(set) var lastLaunch: Date?
     public private(set) var lastAppExit: Date?
 
-    public init(cooldown: TimeInterval = 600, quitGrace: TimeInterval = 300) {
+    public init(cooldown: TimeInterval = 15, quitGrace: TimeInterval = 0) {
         self.cooldown = cooldown
         self.quitGrace = quitGrace
     }
@@ -105,9 +108,31 @@ public struct MeetingLaunchPolicy: Sendable {
         if let until = prefs.snoozedUntil, until > now { return .skip(.snoozed) }
         guard let app = Self.meetingApp(for: trigger) else { return .skip(.notAMeeting) }
         if appRunning { return .skip(.appRunning) }
-        if let lastLaunch, now.timeIntervalSince(lastLaunch) < cooldown { return .skip(.cooldown) }
+        if let lastLaunch, now.timeIntervalSince(lastLaunch) < cooldown, !quitSince(lastLaunch) { return .skip(.cooldown) }
         if let lastAppExit, now.timeIntervalSince(lastAppExit) < quitGrace { return .skip(.recentlyQuit) }
         return .launch(app: app)
+    }
+
+    /// At launcher start (login, agent restart mid-meeting): the microphone already in use by a meeting app counts
+    /// as a `micStarted` trigger, since no rising edge will come. `captureBundleIDs` is read only when running.
+    public static func startupTrigger(micRunning: Bool, captureBundleIDs: () -> [String]) -> LaunchTrigger? {
+        guard micRunning else { return nil }
+        let trigger = LaunchTrigger.micStarted(captureBundleIDs: captureBundleIDs())
+        return meetingApp(for: trigger) == nil ? nil : trigger
+    }
+
+    /// When a time-based skip (`cooldown`, `recentlyQuit`) expires; nil for every other decision.
+    public func retryDate(after decision: LaunchDecision) -> Date? {
+        switch decision {
+        case .skip(.cooldown): return lastLaunch?.addingTimeInterval(cooldown)
+        case .skip(.recentlyQuit): return lastAppExit?.addingTimeInterval(quitGrace)
+        default: return nil
+        }
+    }
+
+    private func quitSince(_ launch: Date) -> Bool {
+        guard let lastAppExit else { return false }
+        return lastAppExit >= launch
     }
 
     /// `decide`, remembering a launch for the cooldown.
@@ -135,6 +160,31 @@ public struct Debounce: Sendable {
     }
 
     /// The scheduled check runs. True when it is due (it then clears, so the next event schedules again).
+    public mutating func fire(at now: Date) -> Bool {
+        guard let deadline, now >= deadline else { return false }
+        self.deadline = nil
+        return true
+    }
+}
+
+/// One pending re-check for a meeting skipped by a cooldown while its microphone stays on. A newer schedule
+/// replaces the old one (single timer); the microphone stopping cancels it.
+public struct CooldownRetry: Sendable {
+    public private(set) var deadline: Date?
+
+    public init() {}
+
+    /// Schedule (or move) the re-check. Returns the deadline to arm a timer for, or nil when unchanged.
+    public mutating func schedule(at due: Date) -> Date? {
+        guard deadline != due else { return nil }
+        deadline = due
+        return due
+    }
+
+    public mutating func cancel() { deadline = nil }
+
+    /// The armed timer fired. True when this is the current deadline (it then clears); a stale or cancelled
+    /// timer returns false.
     public mutating func fire(at now: Date) -> Bool {
         guard let deadline, now >= deadline else { return false }
         self.deadline = nil

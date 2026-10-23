@@ -7,6 +7,8 @@ import CoreAudio
 final class MicMonitor {
     /// Main queue: the default input device went from idle to running (some process opened the mic).
     var onStarted: (() -> Void)?
+    /// Main queue: the default input device went from running to idle.
+    var onStopped: (() -> Void)?
 
     private var device = AudioObjectID(kAudioObjectUnknown)
     private var deviceListener: AudioObjectPropertyListenerBlock?
@@ -69,6 +71,7 @@ final class MicMonitor {
         let running = isRunning
         defer { wasRunning = running }
         if running && !wasRunning { onStarted?() }  // rising edge only: stopping never opens the app
+        if !running && wasRunning { onStopped?() }
     }
 
     private static func defaultInputDevice() -> AudioObjectID {
