@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build MeetingNotes.app (release) with the MeetingNotesDiarize helper, sign both with the local identity and
+# Build MeetingNotes.app (release) with the MeetingNotesDiarize helper and the MeetingNotesLauncher agent
+# ("open the app when a meeting starts", Contents/Library/LaunchAgents), sign them with the local identity and
 # install the app to ~/Applications.
 #
 # Usage: scripts/build-app.sh [--no-install] [--force] [--install-dir DIR] [--pipeline-dir DIR] [--uv-path PATH]
@@ -29,6 +30,8 @@ IDENTITY="${CODESIGN_IDENTITY:-}"
 INSTALL=1
 FORCE=0
 HELPER="MeetingNotesDiarize"  # FluidAudio diarization CLI; the app passes its path to the pipeline worker
+LAUNCHER="MeetingNotesLauncher"  # per-user agent (SMAppService.agent), registered by the app's Settings
+LAUNCHER_LABEL="$BUNDLE_ID.launcher"
 
 PIPELINE_DIR="$ROOT/pipeline"
 UV_PATH=""
@@ -86,13 +89,33 @@ fi
 echo "==> swift build -c release"
 swift build -c release --package-path "$APP_PKG"
 BIN_DIR="$(swift build -c release --package-path "$APP_PKG" --show-bin-path)"
-[[ -x "$BIN_DIR/$HELPER" ]] || { echo "missing $BIN_DIR/$HELPER after the build" >&2; exit 1; }
+for product in "$HELPER" "$LAUNCHER"; do
+  [[ -x "$BIN_DIR/$product" ]] || { echo "missing $BIN_DIR/$product after the build" >&2; exit 1; }
+done
 
 echo "==> assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/MeetingNotes" "$APP/Contents/MacOS/MeetingNotes"
 cp "$BIN_DIR/$HELPER" "$APP/Contents/MacOS/$HELPER"
+cp "$BIN_DIR/$LAUNCHER" "$APP/Contents/MacOS/$LAUNCHER"
+# launchd plist for SMAppService.agent(plistName:): each account registers its own copy (gui/<uid> domain).
+mkdir -p "$APP/Contents/Library/LaunchAgents"
+cat > "$APP/Contents/Library/LaunchAgents/$LAUNCHER_LABEL.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$LAUNCHER_LABEL</string>
+  <key>BundleProgram</key><string>Contents/MacOS/$LAUNCHER</string>
+  <key>AssociatedBundleIdentifiers</key><array><string>$BUNDLE_ID</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+</dict>
+</plist>
+PLIST
+plutil -lint "$APP/Contents/Library/LaunchAgents/$LAUNCHER_LABEL.plist"
 
 if [[ "$PACKAGED" -eq 1 ]]; then
   # Pipeline source + lockfile only (no .venv, tests, bench, .env, caches); the first-run setup copies it to
@@ -148,8 +171,9 @@ if [[ -z "$IDENTITY" ]]; then
   IDENTITY="$("$ROOT/scripts/setup-signing.sh")"
 fi
 echo "==> codesign ($IDENTITY)"
-# Inside out: the helper first (own identifier), then the app, whose seal covers the signed helper.
+# Inside out: the helpers first (own identifiers), then the app, whose seal covers the signed helpers.
 codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID.diarize" "$APP/Contents/MacOS/$HELPER"
+codesign --force --sign "$IDENTITY" --identifier "$LAUNCHER_LABEL" "$APP/Contents/MacOS/$LAUNCHER"
 if [[ "$PACKAGED" -eq 1 ]]; then
   codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID.uv" "$APP/Contents/MacOS/uv"
 fi

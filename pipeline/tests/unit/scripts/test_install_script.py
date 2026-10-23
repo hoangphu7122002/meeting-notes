@@ -183,6 +183,17 @@ def test_an_app_open_in_another_account_is_never_replaced(env, shared):
         assert calls == []
 
 
+def test_another_accounts_launcher_agent_does_not_block(env, shared):
+    # The always-on MeetingNotesLauncher agent of another account is not "the app open there".
+    app = shared["apps"] / "MeetingNotes.app"
+    ps = env["bin"] / "ps"
+    ps.write_text(f'#!/bin/sh\necho "99999 otheruser {app}/Contents/MacOS/MeetingNotesLauncher"\n')
+    ps.chmod(0o755)
+    proc, _ = run(env, "--shared", "--dry-run", extra_env=shared_env(shared))
+    assert proc.returncode == 0, proc.stderr
+    assert "otheruser" not in proc.stderr
+
+
 def test_user_setup_dry_run_touches_only_this_account(tmp_path):
     root, home = tmp_path / "shared", tmp_path / "home"
     (root / "pipeline" / ".venv" / "bin").mkdir(parents=True)

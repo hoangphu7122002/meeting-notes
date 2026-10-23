@@ -13,9 +13,11 @@ mn_app_pids() {
 
 # Other accounts (user names, one per line) running an executable under path $1, e.g. a shared
 # app bundle or pipeline dir. Their apps are never quit from here (fast user switching: ask them to quit).
+# The always-on MeetingNotesLauncher agent does not count: it holds no files and survives an app update.
 mn_other_users() {
   ps -axo uid=,user=,command= 2>/dev/null \
-    | awk -v me="$(id -u)" -v pat="$1" '$1 != me && index($3, pat) == 1 {print $2}' | sort -u
+    | awk -v me="$(id -u)" -v pat="$1" \
+        '$1 != me && index($3, pat) == 1 && $3 !~ /\/Contents\/MacOS\/MeetingNotesLauncher$/ {print $2}' | sort -u
 }
 
 # recording | processing | idle | unknown, from the app's state.json. Only meaningful while the app runs.
