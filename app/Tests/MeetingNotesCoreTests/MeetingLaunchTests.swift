@@ -179,6 +179,11 @@ struct MeetingLaunchTests {
         #expect(LauncherSync(enabled: false, state: .enabled) == .unregister)
         #expect(LauncherSync(enabled: false, state: .requiresApproval) == .unregister)
         #expect(LauncherSync(enabled: false, state: .off) == .none)
+        // Rebuilt or reinstalled app: an enabled agent is registered again (stale launch constraint).
+        #expect(LauncherSync(enabled: true, state: .enabled, bundleChanged: true) == .reregister)
+        #expect(LauncherSync(enabled: true, state: .off, bundleChanged: true) == .register)
+        #expect(LauncherSync(enabled: false, state: .enabled, bundleChanged: true) == .unregister)
+        #expect(LauncherSync(enabled: true, state: .requiresApproval, bundleChanged: true) == .none)
     }
 
     /// A never-registered agent reports `.notFound` (no Background Task Management record yet): it must still

@@ -21,6 +21,12 @@ public enum MeetingLauncherItem {
         return FileManager.default.fileExists(atPath: plist.path)
     }
 
+    /// Identifies this app binary: a rebuild or reinstall changes it.
+    private static var currentBuild: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        return "\(version) \(Bundle.main.bundlePath)"
+    }
+
     private static var status: AppServiceStatus {
         switch service.status {
         case .enabled: return .enabled
@@ -46,14 +52,19 @@ public enum MeetingLauncherItem {
 
     private static func apply(enabled: Bool) throws {
         let before = status
-        let action = LauncherSync(enabled: enabled, state: LoginItemState(agent: before, plistInBundle: plistInBundle))
+        let action = LauncherSync(enabled: enabled, state: LoginItemState(agent: before, plistInBundle: plistInBundle),
+                                  bundleChanged: Settings.launcherRegisteredBuild != currentBuild)
         log.info("launcher agent: setting \(enabled, privacy: .public), status \(String(describing: before), privacy: .public), plist in bundle \(plistInBundle, privacy: .public), action \(String(describing: action), privacy: .public)")
         do {
             switch action {
             case .register: try service.register()
             case .unregister: try service.unregister()
+            case .reregister:
+                try? service.unregister()
+                try service.register()
             case .none: return
             }
+            Settings.launcherRegisteredBuild = action == .unregister ? nil : currentBuild
             lastError = nil
             log.info("launcher agent: \(String(describing: action), privacy: .public) ok, status now \(String(describing: status), privacy: .public)")
         } catch where status == .requiresApproval {

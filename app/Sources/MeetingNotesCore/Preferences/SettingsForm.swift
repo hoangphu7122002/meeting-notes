@@ -71,13 +71,16 @@ extension LoginItemState {
 
 /// What the app does at launch so the launcher agent follows the stored "open for meetings" setting.
 public enum LauncherSync: Equatable, Sendable {
-    case register, unregister, none
+    case register, unregister, reregister, none
 
     /// Registers when on and not registered; unregisters when off and still registered. Leaves an item waiting
     /// for approval alone (the user decides in Login Items) and does nothing where agents are unavailable (dev builds).
-    public init(enabled: Bool, state: LoginItemState) {
+    /// `bundleChanged` (the app was rebuilt or reinstalled since the last registration): an enabled agent keeps the
+    /// old binary's launch constraint and launchd refuses to spawn the new one, so it is registered again.
+    public init(enabled: Bool, state: LoginItemState, bundleChanged: Bool = false) {
         switch (enabled, state) {
         case (true, .off): self = .register
+        case (true, .enabled) where bundleChanged: self = .reregister
         case (false, .enabled), (false, .requiresApproval): self = .unregister
         default: self = .none
         }

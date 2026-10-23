@@ -30,6 +30,8 @@ public enum Settings {
         public static let livePolish = "livePolish"
         /// Read by the launcher agent too (`MeetingLauncher.Key`).
         public static let openForMeetings = MeetingLauncher.Key.openForMeetings
+        /// App build (`CFBundleVersion` + path) the launcher agent was last registered for.
+        public static let launcherRegisteredBuild = "launcherRegisteredBuild"
     }
 
     private static var defaults: UserDefaults { .standard }
@@ -163,6 +165,11 @@ public enum Settings {
     public static var openForMeetings: Bool {
         get { defaults.bool(forKey: Key.openForMeetings) }
         set { defaults.set(newValue, forKey: Key.openForMeetings) }
+    }
+
+    public static var launcherRegisteredBuild: String? {
+        get { defaults.string(forKey: Key.launcherRegisteredBuild) }
+        set { defaults.set(newValue, forKey: Key.launcherRegisteredBuild) }
     }
 
     public static var detectionSnoozeUntil: Date? {
