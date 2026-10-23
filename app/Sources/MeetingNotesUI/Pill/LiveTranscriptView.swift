@@ -1,4 +1,5 @@
 // Last lines of the live transcript inside the recording section of the expanded card (Pill).
+// Shows polished paragraphs when the worker sent any, with a small toggle to view the raw chunks.
 
 import MeetingNotesCore
 import SwiftUI
@@ -6,27 +7,37 @@ import SwiftUI
 struct LiveTranscriptView: View {
     let transcript: LiveTranscript
     var lineCount = 3
+    @State private var showRaw = false
 
     var body: some View {
-        let lines = transcript.lastLines(lineCount)
+        let lines = transcript.displayLines(lineCount, polished: !showRaw)
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 5) {
                 Image(systemName: "captions.bubble")
                 Text(tr(.liveHeading))
+                Spacer(minLength: 0)
+                if transcript.hasPolish {
+                    Button(tr(showRaw ? .liveShowPolished : .liveShowRaw)) { showRaw.toggle() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10, weight: .regular))
+                        .foregroundStyle(Palette.secondary)
+                        .underline()
+                        .help(tr(showRaw ? .liveShowPolished : .liveShowRaw))
+                }
             }
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(Palette.secondary)
             if lines.isEmpty {
                 Text(tr(.liveListening)).foregroundStyle(Palette.secondary).lineLimit(1)
             } else {
-                ForEach(lines, id: \.key) { segment in
-                    (Text("\(tr(segment.isMe ? .me : .them)): ").fontWeight(.semibold)
-                        .foregroundColor(segment.isMe ? Palette.label : Palette.secondary)
-                        + Text(segment.text.trimmingCharacters(in: .whitespacesAndNewlines)))
+                ForEach(lines) { line in
+                    (Text("\(tr(line.isMe ? .me : .them)): ").fontWeight(.semibold)
+                        .foregroundColor(line.isMe ? Palette.label : Palette.secondary)
+                        + Text(line.text.trimmingCharacters(in: .whitespacesAndNewlines)))
                         .lineLimit(2)
                         .truncationMode(.head)
                         .fixedSize(horizontal: false, vertical: true)
-                        .help(segment.text)
+                        .help(line.text)
                 }
             }
             if transcript.isPaused {
@@ -42,8 +53,4 @@ struct LiveTranscriptView: View {
         .padding(.vertical, 8)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.control))
     }
-}
-
-private extension LiveSegment {
-    var key: String { "\(track)-\(seq)" }
 }

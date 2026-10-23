@@ -136,7 +136,7 @@ public enum Tr: String, CaseIterable, Sendable {
     case hotkeyPauseLabel, hotkeyNone, hotkeyChangeHint, createNotesLabel, modeRightAway, modeWhenIdle, modeManual
     case summaryModelLabel, modelLight, modelBetter, showInDock, showPillRecording, showPillIdle, launchAtLogin
     case loginItemStatus, loginEnabled, loginNeedsApproval, loginOff, loginUnavailable, loginUnknown, version
-    case liveTranscriptionToggle, liveTranscriptionCaption
+    case liveTranscriptionToggle, liveTranscriptionCaption, livePolishToggle, livePolishCaption, liveShowRaw, liveShowPolished
 
     // Notes viewer
     case summaryInProgress, noNotes, searchTranscript, summaryHeading, decisionsHeading, actionItemsHeading
@@ -428,6 +428,13 @@ public enum Tr: String, CaseIterable, Sendable {
         case .liveTranscriptionCaption:
             return ("Hiện lời thoại ngay trong cuộc họp. Tốn thêm bộ nhớ và GPU khi đang ghi; ghi chú sau cuộc họp vẫn đầy đủ như thường.",
                     "Shows what is said during the meeting. Uses more memory and GPU while recording; the notes afterwards are still complete.")
+
+        case .livePolishToggle: return ("Làm gọn lời chép trực tiếp", "Tidy up the live transcript")
+        case .livePolishCaption:
+            return ("Nối câu bị cắt, viết hoa đầu câu, sửa chính tả thuật ngữ, bỏ tiếng đệm và chia đoạn. Chỉ để hiển thị: bản gốc vẫn được giữ, ghi chú không đổi. Áp dụng từ lần chép lời trực tiếp tiếp theo.",
+                    "Joins split sentences, capitalizes, fixes glossary spelling, drops fillers and adds paragraphs. Display only: the raw text is kept and the notes do not change. Applies from the next live transcript.")
+        case .liveShowRaw: return ("Xem bản gốc", "Show raw")
+        case .liveShowPolished: return ("Xem bản đã làm gọn", "Show tidied")
 
         case .summaryInProgress: return ("Đang tóm tắt…", "Summary in progress…")
         case .noNotes: return ("Chưa có ghi chú.", "No notes yet.")

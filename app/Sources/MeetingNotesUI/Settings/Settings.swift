@@ -26,6 +26,7 @@ public enum Settings {
         public static let uiLanguage = "uiLanguage"
         public static let showRecordingPill = "showRecordingPill"
         public static let liveTranscription = "liveTranscription"
+        public static let livePolish = "livePolish"
     }
 
     private static var defaults: UserDefaults { .standard }
@@ -42,6 +43,7 @@ public enum Settings {
             Key.autoStopSilenceMinutes: 15,
             Key.autoStopOnCallEnd: true,
             Key.liveTranscription: false,
+            Key.livePolish: false,
         ])
     }
 
@@ -144,6 +146,12 @@ public enum Settings {
     public static var liveTranscription: Bool {
         get { defaults.bool(forKey: Key.liveTranscription) }
         set { defaults.set(newValue, forKey: Key.liveTranscription) }
+    }
+
+    /// Opt-in display-only polish of the live transcript (sent as `"polish":"rules"` when the worker supports it).
+    public static var livePolish: Bool {
+        get { defaults.bool(forKey: Key.livePolish) }
+        set { defaults.set(newValue, forKey: Key.livePolish) }
     }
 
     public static var detectionSnoozeUntil: Date? {

@@ -86,7 +86,7 @@ final class LiveTranscriber {
             default:
                 break
             }
-        case .liveSegment, .liveStatus:
+        case .liveSegment, .liveStatus, .livePolish:
             guard event.job == job, var current = transcript else { return }
             if current.apply(event) { transcript = current }
         case let .jobEnd(eventJob, exit):
@@ -143,7 +143,8 @@ final class LiveTranscriber {
         guard let job, let folder else { return }
         guard worker.features?.contains("live") == true else { return giveUp() }
         do {
-            try worker.send(WorkerEvent.Command.live(job: job, folder: folder.path))
+            let polish = WorkerEvent.Command.livePolishMode(enabled: Settings.livePolish, features: worker.features)
+            try worker.send(WorkerEvent.Command.live(job: job, folder: folder.path, polish: polish))
             phase = .running
         } catch {
             phase = .running
