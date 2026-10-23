@@ -92,10 +92,14 @@ class Events:
     timings: dict = {}
 
     def __init__(self):
-        self.segments, self.status = [], []
+        self.segments, self.status, self.polish = [], [], []
 
     def live_segment(self, track, speaker, seq, start, end, language, text):
         self.segments.append({"track": track, "speaker": speaker, "seq": seq, "start": start, "end": end, "text": text})
+
+    def live_polish(self, track, speaker, para, seqs, tier, text):
+        self.polish.append({"track": track, "speaker": speaker, "para": para, "seqs": list(seqs), "tier": tier,
+                            "text": text})
 
     def live_status(self, state, backlog_sec, skipped_sec, rtf, reason=None):
         self.status.append({"state": state, "backlog_sec": backlog_sec, "skipped_sec": skipped_sec, "reason": reason})

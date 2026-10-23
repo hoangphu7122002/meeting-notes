@@ -79,8 +79,11 @@ def test_cancel_before_job_starts_is_not_lost(meeting, stubs, deps, monkeypatch)
 class FakeLive:
     """make_live stand-in: emits one live_segment and a status per poll until stopped."""
 
+    configs: list = []
+
     def __init__(self, folder, cfg, reporter, models):
         self.reporter = reporter
+        FakeLive.configs.append(cfg)
 
     def run(self, stop):
         self.reporter.live_segment("mic", "Me", 0, 1.0, 4.5, "vi", "xin chào")
@@ -105,7 +108,7 @@ def test_ready_announces_live_feature(monkeypatch):
     w, out = make_live_worker(monkeypatch)
     monkeypatch.setattr(sys, "stdin", io.StringIO(""))
     assert w.serve() == 0
-    assert events(out)[0]["features"] == ["live"]
+    assert events(out)[0]["features"] == ["live", "live_polish"]
     w2, out2 = make_worker(monkeypatch)
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"cmd": "live", "job": "live-1", "folder": "/tmp"}) + "\n"))
     w2.serve()
@@ -162,3 +165,15 @@ def test_live_bad_folder(monkeypatch, tmp_path):
     w, out = make_live_worker(monkeypatch)
     w._live({"cmd": "live", "job": "live-x", "folder": str(tmp_path / "missing")})
     assert events(out)[-1] == {"event": "job_end", "job": "live-x", "exit": 2}
+
+
+def test_live_polish_from_the_app_overrides_config(meeting, monkeypatch):
+    import sys
+
+    FakeLive.configs.clear()
+    w, out = make_live_worker(monkeypatch)
+    lines = [{"cmd": "live", "job": "live-p", "folder": str(meeting), "polish": "rules"}, {"cmd": "live_stop", "job": "live-p"},
+             {"cmd": "live", "job": "live-q", "folder": str(meeting), "polish": "bogus"}, {"cmd": "live_stop", "job": "live-q"}]
+    monkeypatch.setattr(sys, "stdin", io.StringIO("".join(json.dumps(c) + "\n" for c in lines)))
+    w.serve()
+    assert [c.live_polish for c in FakeLive.configs] == ["rules", "off"] and w.cfg.live_polish == "off"

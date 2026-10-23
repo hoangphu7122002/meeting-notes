@@ -163,6 +163,15 @@ class Reporter:
         finally:
             self.log_file = log_file
 
+    def live_polish(self, track: str, speaker: str, para: int, seqs: list[int], tier: str, text: str) -> None:
+        """Polished live paragraph. Never written to the log file, like live_segment."""
+        log_file, self.log_file = self.log_file, None
+        try:
+            self._emit({"event": "live_polish", "track": track, "speaker": speaker, "para": para, "seqs": list(seqs),
+                        "tier": tier, "text": text})
+        finally:
+            self.log_file = log_file
+
     def live_status(self, state: str, backlog_sec: float, skipped_sec: float, rtf: float | None,
                     reason: str | None = None) -> None:
         self._emit({"event": "live_status", "state": state, "backlog_sec": backlog_sec, "skipped_sec": skipped_sec,

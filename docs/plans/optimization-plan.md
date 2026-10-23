@@ -281,6 +281,17 @@ Polish is a display layer; it never feeds `transcript.json`, notes or the summar
 - **Acceptance:** WER vs reference unchanged (strict: ±0.0-0.2 pp), casing accuracy ≥ 0.95, each paragraph replaced
   at most twice in the pill.
 - **Effort:** 3-4 days. **Decision:** none beyond the opt-in UI.
+- **Status (2026-10-23): Python side built**, off by default behind config key `live_polish = "off" | "rules"`
+  (+ `live_polish_pause_sec` 2.5, `live_polish_max_words` 80; new public keys). `domain/live_polish.py` (rules +
+  `LivePolisher` paragraphing, emits only changed paragraphs), call site in `application/live_transcribe.py`
+  (`_announce`, paragraphs closed at stop), `ProgressReporter.live_polish`, worker `ready.features` += `"live_polish"`,
+  `live` cmd `"polish"` overrides config for the job, event
+  `{"event":"live_polish","job","track","speaker","para","seqs","tier":"rules","text"}`. Raw partials and
+  `live_segment` unchanged; no `.work/transcript.polish.jsonl` (polish is recomputed from the re-announced partials on
+  resume). Conservative choices: `ừ` (yes) and sentence-final `à` kept; no "?" for vi question particles; old/new tone
+  placement (`hoà`/`hòa`) left as decoded. Unit tests incl. Vietnamese NFD input, tone placement, reduplication.
+  **Not done:** Swift side (`WorkerEvent.livePolish`, `LiveTranscript` polish map, pill raw toggle, Settings toggle,
+  `L10n`), `bench/live_polish_bench.py` (WER/boundary F1/casing acceptance not measured yet).
 
 #### 6.2 Tier 2: LLM strict (opt-in, later)
 

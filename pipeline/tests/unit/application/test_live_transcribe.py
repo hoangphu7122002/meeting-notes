@@ -78,3 +78,20 @@ def test_mic_chunk_that_only_echoes_the_speakers_is_not_decoded():
     _, stats, store, events, _ = run({"mic": mic, "system": system})
     assert stats["bleed"] >= 1 and not any(c["track"] == "mic" and c["status"] == "decoded" for c in store.lines)
     assert all(e["track"] == "system" for e in events.segments)
+
+
+def test_polish_is_off_by_default_and_leaves_raw_partials_unchanged():
+    _, _, store, events, _ = run(meeting())
+    assert events.polish == []
+    cfg = Config()
+    cfg.live_polish = "rules"
+    _, _, store2, events2, _ = run(meeting(), cfg=cfg)
+    assert [c["segments"] for c in store2.lines] == [c["segments"] for c in store.lines]  # raw text kept as decoded
+    assert events2.segments == events.segments
+    assert events2.polish and all(p["tier"] == "rules" for p in events2.polish)
+    # speakers alternate, so each turn is its own paragraph; the last emit of each paragraph is closed with a period
+    final = {(p["track"], p["para"]): p for p in events2.polish}
+    assert all(p["text"] in ("Voice 140.", "Voice 230.") for p in final.values())
+    assert {p["speaker"] for p in final.values()} == {"Me", "Others"}
+    seqs = sorted((p["track"], s) for p in final.values() for s in p["seqs"])
+    assert seqs == sorted((e["track"], e["seq"]) for e in events2.segments)

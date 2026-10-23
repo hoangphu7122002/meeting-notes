@@ -14,6 +14,7 @@ from collections import defaultdict
 from ..config import Config
 from ..domain.live_backlog import PROCESS, SKIP, BacklogPolicy, Decision, decide, status_of
 from ..domain.live_chunks import ChunkPolicy, LiveChunk, TrackChunker, mic_is_bleed, worth_decoding
+from ..domain.live_polish import LivePolisher, PolishRules, glossary_terms
 from ..domain.partial_merge import PARTIAL_VERSION, config_signature, usable_partials
 from ..domain.signal import SR
 from ..domain.speakers import Block
@@ -37,6 +38,15 @@ def live_signature(cfg: Config) -> str:
     })
 
 
+def make_polisher(cfg: Config) -> LivePolisher | None:
+    """Tier 1 rules when `live_polish` is "rules" (or "llm": Tier 2 is not built yet, rules are its first pass)."""
+    if str(cfg.live_polish or "off").strip().lower() not in ("rules", "llm"):
+        return None
+    return LivePolisher(PolishRules(glossary=tuple(glossary_terms(cfg.glossary)),
+                                    pause_sec=float(cfg.live_polish_pause_sec),
+                                    max_words=max(1, int(cfg.live_polish_max_words))))
+
+
 def chunk_policy(cfg: Config) -> ChunkPolicy:
     max_sec = min(cfg.live_max_chunk_sec, cfg.whisper_max_chunk_sec)
     min_sec = min(cfg.live_min_chunk_sec, max_sec)
@@ -52,6 +62,7 @@ class LiveTranscription:
         self.policy = chunk_policy(cfg)
         self.backlog_policy = BacklogPolicy(cfg.live_max_backlog_sec, cfg.live_on_battery)
         self.signature = live_signature(cfg)
+        self.polisher = make_polisher(cfg)
         self.speakers = {"mic": cfg.me_name}
         self.chunkers: dict[str, TrackChunker] = {}
         self.pending: list[LiveChunk] = []
@@ -81,6 +92,8 @@ class LiveTranscription:
                 break  # end of a replay: what is still queued is left to the Stop-time pass
             if not more:
                 stop.wait(POLL_SEC)
+        if self.polisher:
+            self._send_polish(self.polisher.close_all())
         self._report(decision, state="stopped")
         return dict(self.stats, rtf=self.rtf)
 
@@ -172,8 +185,17 @@ class LiveTranscription:
     def _announce(self, line: dict) -> None:
         segments = line.get("segments") or []
         if segments:
-            self.r.live_segment(line["track"], self._speaker(line["track"]), int(line["seq"]), segments[0]["start"],
-                                segments[-1]["end"], line.get("language") or "", " ".join(s["text"] for s in segments))
+            text = " ".join(s["text"] for s in segments)
+            track, speaker, seq = line["track"], self._speaker(line["track"]), int(line["seq"])
+            self.r.live_segment(track, speaker, seq, segments[0]["start"], segments[-1]["end"],
+                                line.get("language") or "", text)
+            if self.polisher:
+                self._send_polish(self.polisher.add(track, speaker, seq, segments[0]["start"], segments[-1]["end"],
+                                                    text))
+
+    def _send_polish(self, paragraphs: list) -> None:
+        for p in paragraphs:
+            self.r.live_polish(p.track, p.speaker, p.para, p.seqs, "rules", p.text)
 
     def _speaker(self, track: str) -> str:
         return self.speakers.get(track, OTHERS)

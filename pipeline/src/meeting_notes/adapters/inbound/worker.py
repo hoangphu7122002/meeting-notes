@@ -6,11 +6,12 @@ so nothing stays resident while you work.
 
 Protocol: one JSON object per line.
   stdin  {"cmd": "warmup"} | {"cmd": "process", "job": "<id>", "folder": "...", "from": null, "force": false}
-         {"cmd": "live", "job": "live-<id>", "folder": "..."} | {"cmd": "live_stop", "job": "live-<id>"}
+         {"cmd": "live", "job": "live-<id>", "folder": "...", "polish"?: "off|rules|llm"} | {"cmd": "live_stop", "job": "live-<id>"}
          {"cmd": "cancel"} | {"cmd": "release"} | {"cmd": "ping"} | {"cmd": "quit"}
-  stdout {"event": "worker", "status": "ready|warming|warm|released|busy", ...} (ready carries "features": ["live"])
+  stdout {"event": "worker", "status": "ready|warming|warm|released|busy", ...} (ready carries "features": ["live", "live_polish"])
          pipeline events (see adapters/outbound/progress_reporter.py) tagged with "job", then {"event": "job_end", "job": id, "exit": 0|1|2|3}
-         live jobs: {"event": "live_segment", ...} / {"event": "live_status", ...}, then job_end
+         live jobs: {"event": "live_segment", ...} / {"event": "live_status", ...} / {"event": "live_polish", ...}
+         (display-only polished paragraph, only when polish is on), then job_end
 A live job runs in the serial loop until live_stop (also implied by process, quit or EOF); it never releases the
 transcriber, so the Stop-time process job finds whisper warm.
 Exit codes per job: 0 ok, 1 failed, 2 bad request, 3 cancelled. EOF on stdin ends the worker.
@@ -18,6 +19,7 @@ Exit codes per job: 0 ok, 1 failed, 2 bad request, 3 cancelled. EOF on stdin end
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import queue
@@ -106,7 +108,7 @@ class Worker:
 
     def serve(self) -> int:
         threading.Thread(target=self._read_stdin, name="stdin", daemon=True).start()
-        self.send({"event": "worker", "status": "ready", "pid": os.getpid(), "features": ["live"] if self.make_live else []})
+        self.send({"event": "worker", "status": "ready", "pid": os.getpid(), "features": ["live", "live_polish"] if self.make_live else []})
         while True:
             try:
                 cmd = self.commands.get(timeout=15)
@@ -191,8 +193,11 @@ class Worker:
             self.models.update_config(self.cfg)
             self.busy = True
             reporter = self.make_reporter(json_mode=True, out=_Locked(self), job=job)
+            cfg = self.cfg
+            if cmd.get("polish") in ("off", "rules", "llm"):  # app setting overrides config.toml for this job
+                cfg = dataclasses.replace(cfg, live_polish=str(cmd["polish"]))
             try:
-                self.make_live(folder, self.cfg, reporter, self.models).run(stop)
+                self.make_live(folder, cfg, reporter, self.models).run(stop)
             except Exception as exc:
                 print(redact(f"live job failed: {exc}"), file=sys.stderr, flush=True)
                 self.send({"event": "error", "job": job, "message": redact(f"Live transcription stopped: {exc}")})

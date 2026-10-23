@@ -109,6 +109,9 @@ class ProgressReporter(Protocol):
                     reason: str | None = None) -> None:
         """running | deferred | throttled | stopped."""
 
+    def live_polish(self, track: str, speaker: str, para: int, seqs: list[int], tier: str, text: str) -> None:
+        """Display-only polished text of one live paragraph (replaces earlier text of the same (track, para))."""
+
 
 class LiveAudioSource(Protocol):
     """The growing tracks of a meeting being recorded (or a replay of a finished one) as 16 kHz audio."""

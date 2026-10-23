@@ -83,6 +83,13 @@ class Config:
     live_pause_sec: float = 0.7
     live_max_backlog_sec: float = 120.0
     live_on_battery: bool = False
+    # Live polish (display only, docs/research/live-polish.md): "off" (default) | "rules" = deterministic cleanup
+    # of live text (sentence joins across chunks, casing, glossary spelling, decode loops, interjections like
+    # "ờ"/"um", paragraph breaks). Raw partials and the Stop-time transcript are never changed. A paragraph ends
+    # at a speaker change, a same-track pause >= live_polish_pause_sec or after live_polish_max_words words.
+    live_polish: str = "off"
+    live_polish_pause_sec: float = 2.5
+    live_polish_max_words: int = 80
     # Housekeeping.
     keep_wav: bool = False
     rename_folder: bool = True
