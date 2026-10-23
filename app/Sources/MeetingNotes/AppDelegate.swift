@@ -31,7 +31,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.applicationIconImage = AppIcon.image
         let hub = UIHub(controller: controller)
         self.hub = hub
         hub.onLanguageChanged = { [weak self] in self?.buildMainMenu() }
@@ -96,21 +95,3 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-enum AppIcon {
-    /// Drawn once at launch (the bundle has no .icns).
-    static let image: NSImage = {
-        NSImage(size: NSSize(width: 512, height: 512), flipped: false) { rect in
-            let inset = rect.insetBy(dx: 40, dy: 40)
-            let path = NSBezierPath(roundedRect: inset, xRadius: 96, yRadius: 96)
-            NSGradient(starting: NSColor(red: 1, green: 0.42, blue: 0.3, alpha: 1),
-                       ending: NSColor(red: 0.86, green: 0.16, blue: 0.24, alpha: 1))?.draw(in: path, angle: -90)
-            let config = NSImage.SymbolConfiguration(pointSize: 230, weight: .semibold)
-                .applying(NSImage.SymbolConfiguration(paletteColors: [.white]))
-            if let symbol = NSImage(systemSymbolName: "waveform", accessibilityDescription: nil)?.withSymbolConfiguration(config) {
-                let size = symbol.size
-                symbol.draw(in: NSRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height))
-            }
-            return true
-        }
-    }()
-}
