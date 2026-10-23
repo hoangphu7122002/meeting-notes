@@ -121,6 +121,20 @@ struct MeetingLaunchTests {
         #expect(LauncherSync(enabled: false, state: .off) == .none)
     }
 
+    /// A never-registered agent reports `.notFound` (no Background Task Management record yet): it must still
+    /// register when the plist ships in the bundle; only a dev build without the plist is unavailable.
+    @Test func neverRegisteredAgentStillRegisters() {
+        #expect(LoginItemState(agent: .notFound, plistInBundle: true) == .off)
+        #expect(LoginItemState(agent: .notFound, plistInBundle: false) == .unavailable)
+        #expect(LoginItemState(agent: .notRegistered, plistInBundle: true) == .off)
+        #expect(LoginItemState(agent: .enabled, plistInBundle: true) == .enabled)
+        #expect(LoginItemState(agent: .requiresApproval, plistInBundle: true) == .requiresApproval)
+        #expect(LoginItemState(agent: .unknown, plistInBundle: true) == .unknown)
+        #expect(LauncherSync(enabled: true, state: LoginItemState(agent: .notFound, plistInBundle: true)) == .register)
+        #expect(LauncherSync(enabled: true, state: LoginItemState(agent: .notFound, plistInBundle: false)) == .none)
+        #expect(LauncherSync(enabled: false, state: LoginItemState(agent: .notFound, plistInBundle: true)) == .none)
+    }
+
     @Test func settingsRowNeedsDetection() {
         let env = SettingsEnvironment(detectionSupported: true, physicalMemoryGB: 16, microphone: .granted, screenCapture: .granted)
         var old = env

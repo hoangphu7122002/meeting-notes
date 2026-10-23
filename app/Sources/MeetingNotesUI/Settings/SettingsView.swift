@@ -41,6 +41,7 @@ public struct SettingsView: View {
         self.version = version
         self.defaultNotesDir = defaultNotesDir
         self.height = height
+        _launcherError = State(initialValue: values == nil ? MeetingLauncherItem.lastError : nil)
         let values = values ?? .current()
         _login = State(initialValue: values.login)
         _detection = State(initialValue: values.detection)
@@ -185,6 +186,12 @@ public struct SettingsView: View {
                             on: openForMeetings, state: launcher, detection: detection, env))
         }
         .disabled(!SettingsRules.openForMeetingsEnabled(detection: detection, env))
+        if openForMeetings && (launcher == .requiresApproval || launcherError != nil) {
+            HStack {
+                Spacer()
+                Button(tr(.actionOpenLoginItems)) { LoginItem.openSystemSettings() }
+            }
+        }
 
         Toggle(isOn: $liveTranscription) {
             SettingLabel(tr(.liveTranscriptionToggle), help: tr(.liveTranscriptionCaption))

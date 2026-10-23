@@ -49,6 +49,26 @@ public enum LoginItemState: Sendable, Equatable {
     public var canToggle: Bool { self != .unavailable }
 }
 
+/// `SMAppService.Status`, mirrored so Core maps it without ServiceManagement.
+public enum AppServiceStatus: Sendable, Equatable {
+    case notRegistered, enabled, requiresApproval, notFound, unknown
+}
+
+extension LoginItemState {
+    /// The launcher agent's state. An agent that was never registered reports `.notFound` (Background Task
+    /// Management has no record of it yet), not `.notRegistered`: only a bundle without the agent plist
+    /// (dev build) makes it unavailable; otherwise it is simply off and gets registered.
+    public init(agent status: AppServiceStatus, plistInBundle: Bool) {
+        switch status {
+        case .enabled: self = .enabled
+        case .requiresApproval: self = .requiresApproval
+        case .notRegistered: self = .off
+        case .notFound: self = plistInBundle ? .off : .unavailable
+        case .unknown: self = .unknown
+        }
+    }
+}
+
 /// What the app does at launch so the launcher agent follows the stored "open for meetings" setting.
 public enum LauncherSync: Equatable, Sendable {
     case register, unregister, none

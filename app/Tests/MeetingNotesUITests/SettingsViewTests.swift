@@ -17,6 +17,9 @@ struct SettingsViewTests {
         #expect(current == SettingsValues())
         #expect(Settings.Key.openForMeetings == "openForMeetings" && Settings.Key.detection == MeetingLauncher.Key.detection)
         #expect(Settings.Key.detectionSnoozeUntil == MeetingLauncher.Key.detectionSnoozeUntil)
+        // "Open the app when a meeting starts" is on by default (registered, not just the struct default).
+        let registered = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
+        #expect(registered[Settings.Key.openForMeetings] as? Bool == true)
         #expect(Settings.Key.showRecordingPill == "showRecordingPill" && Settings.Key.showIdlePill == "showIdlePill")
         #expect(Settings.Key.autoStopOnCallEnd == "autoStopOnCallEnd" && Settings.Key.notesDir == "notesDir")
     }

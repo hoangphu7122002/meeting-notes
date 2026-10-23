@@ -31,7 +31,7 @@ extension AppController {
     }
 
     /// The launcher agent ("Open the app when a meeting starts") follows the stored setting. Best effort: a
-    /// failure shows in Settings, where the toggle re-reads the agent's state.
+    /// failure is logged (subsystem com.hoangphu.meetingnotes, category launcher) and shown under the Settings toggle.
     func syncMeetingLauncher() {
         try? MeetingLauncherItem.sync()
     }
