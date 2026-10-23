@@ -309,6 +309,16 @@ during a real call) we do not know if live disturbs the call, so T2 gates this p
 - **Effort:** 3.5-4.5 days. **Decision:** run live under memory "warn" at all, and which default (strict vs balanced);
   new config key `live_memory_policy`.
 
+### Phase 5b: live captions (design B)
+
+**Status:** built 2026-10-23 (opt-in through Settings › Advanced › Live transcript = Fast captions, the default once
+live is on). `MeetingNotesCaptions` helper (WhisperKit 1.1.1, `openai_whisper-small` on the Neural Engine) fed from
+the recorder's own buffers; gray draft captions in the pill, replaced by A's text as its chunks land; never written.
+Synthetic bench (`bench/caption_bench.py`, 1x): time to first caption p50 1.33 s / p95 1.73 s, caption lag p50 0.5 s,
+helper footprint ~0.1 GB (+ Neural Engine weights, <= 0.5 GB), WER 30 % vs A's 6.8 %. Pauses with A's rules
+(critical pressure, battery). Open: T2 during a real call, real >= 10 min meetings. Details:
+`realtime-feasibility.md` section 11.
+
 ### Phase 6: live polish
 
 **Why:** whisper already punctuates; most ugliness in live text is chunk-boundary artefacts (split sentences,

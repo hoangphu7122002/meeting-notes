@@ -216,3 +216,44 @@ chunk): `meeting-notes live --simulate 4` decoded 2 chunks (10 gated as silent, 
 `process` reused 13.3 s of diarized speech and decoded 7.0 s (tail) after Stop. Transcribe stage 4.2 s vs 8.0 s for a
 fresh offline run; final text 2 of 75 words different from that run (2.7 %, at the live/tail boundary), same speakers.
 Still no >= 10 min corpus and no T2 (load during a call).
+
+## 11. Design B: live captions with WhisperKit (2026-10-23)
+
+Design B is built as an add-on to A (`MeetingNotesCaptions` helper, Settings › Advanced › Live transcript = Fast
+captions). Bench: `pipeline/bench/caption_bench.py` streams the `asr_bench` synthetic corpus (`syn`, 194 s, 20
+utterances, vi / en / code-switch, `say` voices, known text; never a real recording) into the helper at 1x real time
+through the app's own wire protocol (100 ms `audio` lines), one track. WhisperKit 1.1.1, models from
+`argmaxinc/whisperkit-coreml` @ `0f63a78` (ungated: downloaded with no token in the environment), encoder and decoder
+on the Neural Engine (`cpuAndNeuralEngine`), mel on CPU. M1 Pro, 16 GB, macOS 15.5, memory pressure "warn"
+throughout, one run per model, no call running (T2 still open).
+
+Metrics: TTFC = speech onset -> first caption text overlapping the utterance; lag = caption arrival - end of the audio
+it covers (every hypothesis/final); final = utterance end -> confirmed text; WER/CER of the confirmed captions vs the
+known text (`metrics.wer`, NFC, lowercase, no punctuation). Footprint = `footprint -p` of the helper, sampled every
+second; Core ML weights resident on the Neural Engine side are not attributed to the process (not measurable without
+root; at most the weight size, below).
+
+| Model (download) | Load s (warm) | TTFC p50 / p95 s | Lag p50 / p95 s | Final p50 / p95 s | WER % | CER % | Footprint peak MB |
+|---|---|---|---|---|---|---|---|
+| tiny (77 MB) | 0.7 | 0.68 / 1.32 | 0.11 / 1.74 | 0.57 / 5.43 | 48 | 31 | 72 |
+| base (147 MB) | 0.7 | 1.06 / 3.44 | 0.20 / 4.97 | 0.94 / 5.94 | 48 | 29 | 75 |
+| **small (486 MB)** | 1.0 | **1.33 / 1.73** | **0.50 / 2.11** | **0.67 / 3.24** | **30** | **15** | **97** |
+| small_216MB (palettized) | 1.2 | 1.56 / 5.84 | 0.81 / 7.99 | 2.40 / 10.37 | 49 | 35 | 120 |
+| large-v3-turbo_632MB | 3.1 | 1.99 / 5.12 | 1.11 / 5.80 | 2.18 / 10.43 | 20 | 14 | 102 |
+| A: turbo q4 MLX (section 4, same corpus) | n/a | 10-35 s behind speech | | | 6.8 (offline 6.5) | | 1240 (MLX peak) |
+
+First load per account compiles the model for the Neural Engine: 18-50 s for tiny-small, ~14 min for turbo (one
+time, done by `--prepare`).
+
+Decision: **`openai_whisper-small`** is the default. It is the only model that meets the <= 2 s budget at p95 (TTFC
+1.73 s) with usable text (CER 15 %); turbo has the best text but p95 above 5 s (its 32-layer encoder runs on every
+update), the palettized small is both worse and slower on this ANE, tiny/base are fast but about half the words are
+wrong in Vietnamese. B's text is a draft: WER 30 % vs A's 6.8 % on the same corpus, which is why A stays
+authoritative and replaces captions as its chunks land; B is never written to any file.
+
+Apple `SFSpeechRecognizer` (checked on this Mac): `vi-VN` is in `supportedLocales` but
+`supportsOnDeviceRecognition` is false (server only; "No Assistant asset for language vi-VN"), so it is ruled out by
+the local-only rule. `en-US` is on-device.
+
+Open: T2 (load during a real call, ANE shared with Zoom/Meet effects), two tracks speaking at once (the helper decodes
+one window at a time, most-behind track first), real meetings >= 10 min.

@@ -1,7 +1,8 @@
 # Real-time transcription: design study
 
 Date: 2026-10-21. Status: design A implemented as an opt-in setting (default off), with the amendments of
-[`realtime-feasibility.md`](realtime-feasibility.md) section 8 (strict reuse rule, voiced/bleed gate, warm-up); B and C not built. Machine: M1 Pro, 16 GB, macOS 15.5 (Apple
+[`realtime-feasibility.md`](realtime-feasibility.md) section 8 (strict reuse rule, voiced/bleed gate, warm-up); B built 2026-10-23 as a display-only caption layer on top of A
+(WhisperKit small on the Neural Engine, results in `realtime-feasibility.md` section 11); C not built. Machine: M1 Pro, 16 GB, macOS 15.5 (Apple
 SpeechAnalyzer needs macOS 26, so it is out for now). Meetings: Vietnamese with English code-switching.
 Default ASR: `mlx-community/whisper-large-v3-turbo-q4`.
 Inputs: web research notes (sources in section 6), [`speed-memory.md`](speed-memory.md),
