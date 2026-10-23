@@ -52,7 +52,7 @@ Notes on numbers: collars, overlap scoring and reference labels differ across so
 ## 4. Recommendation
 
 1. **Default (do now):** community-1 bundled as a local dir with CC-BY attribution (or mirrored under our own account), no token. Zero quality change. Keep the existing wespeaker clustering as last fallback.
-2. **Fallback candidate to evaluate:** sherpa-onnx (or Senko) as an ungated, torch-free second tier replacing the current agglomerative fallback. Likely better than the present fallback at near-zero download cost.
+2. **Fallback candidate to evaluate:** sherpa-onnx (or Senko) as an ungated, torch-free second tier replacing the current agglomerative fallback. Likely better than the present fallback at near-zero download cost. **Measured 2026-10-23 (section 7): built as opt-in; slower than pyannote on MPS and over-splits speakers on 60 min, so neither default nor fallback yet.**
 3. **Watch/optional:** FluidAudio CLI as an opt-in fast path (ANE, community-1 weights) if diarization time on M1 Pro matters.
 4. **Do not adopt:** DiariZen (non-commercial weights), Sortformer 4spk (4-speaker cap), Nemotron-3 (NVIDIA-only), Reverb/Falcon (gated, proprietary).
 
@@ -85,6 +85,65 @@ and each download is sha256-pinned in `sherpa_models.py`.
 The release note of the embedding assets says "each model has its own license"; only the names above are
 accepted by `sherpa_embedding_model`. If the app ships these files, add the MIT notice (CNRS) and the Apache-2.0
 NOTICE lines to the app's third-party notices.
+
+## 7. Measured: pyannote community-1 vs sherpa-onnx (2026-10-23)
+
+`pipeline/bench/diar_bench.py` (diarize stage only: system track, mic voice check or full mic pass, two-track
+merge) on the seeded `say` fixtures of `bench/meeting_fixture.py`. M1 Pro 16 GB, **on AC**, nice 10 + utility QoS,
+one job at a time, `--repeat 2` (medians; DER and speaker counts were identical across repeats, times within
+~10 % except sherpa 60 min 312-394 s). Memory pressure: waited 10 min for "normal" before the first run, never
+got a clean run; every run is labelled **warn** (some started "normal"), swap ~17-19 GB used. pyannote =
+`speaker-diarization-community-1` on MPS, batch 8; sherpa = segmentation-3.0 ONNX + CAM++ zh_en advanced, CPU 4
+threads, fast clustering threshold 0.5. Time = model load + diarize. Peak RSS = process `ru_maxrss` (MPS/Metal
+buffers of pyannote are not fully counted).
+
+| Fixture | Engine | Time (load + diarize) | RTF | DER c0 / c0.25 | DER system track | Speakers hyp/ref | Peak RSS |
+|---|---|---|---|---|---|---|---|
+| 12 min, 1 local + 2 remote | pyannote | 62.4 s (9.0 + 53.5) | 0.074 | 4.2 % / 0.2 % | 5.1 % | 3/3 | 0.73 GB |
+| | sherpa | 68.0 s (0.4 + 67.6) | 0.093 | 4.8 % / 0.4 % | 6.3 % | 3/3 | 0.70 GB |
+| 12 min, 2 local (in-room) + 2 remote | pyannote | 113.6 s (8.7 + 104.9) | 0.145 | 6.0 % / 1.6 % | 4.6 % | 4/4 | 0.68 GB |
+| | sherpa | 130.2 s (0.9 + 129.3) | 0.179 | 9.9 % / 5.0 % | 11.1 % | **5/4** | 0.60 GB |
+| 12 min, speaker bleed on mic | pyannote | 64.5 s (8.0 + 56.4) | 0.078 | 4.6 % / 0.3 % | 5.1 % | 3/3 | 0.84 GB |
+| | sherpa | 69.2 s (0.4 + 68.8) | 0.095 | 6.6 % / 1.7 % | 9.0 % | **4/3** | 0.64 GB |
+| 60 min, 1 local + 3 remote | pyannote | 286.3 s (12.1 + 274.2) | 0.076 | 5.2 % / 1.0 % | 7.2 % | 4/4 | 1.18 GB |
+| | sherpa | 353.5 s (0.4 + 353.1) | 0.098 | **15.5 % / 10.8 %** | **28.3 %** | **8/4** | 1.70 GB |
+| 12 min, mic check off (full mic pass) | pyannote | 124.9 s | 0.158 | 4.8 % / 0.3 % | 5.1 % | 3/3 | 0.62 GB |
+| | sherpa (no torch at all) | 121.8 s | 0.168 | **28.3 % / 23.5 %** | 6.3 % | **5/3** (mic split in 3) | 0.50 GB |
+
+Findings:
+
+1. **sherpa-onnx is not faster here.** With the default mic check it is 7-24 % slower in total (RTF 0.09-0.18 vs
+   0.07-0.15); with both tracks diarized in full it is 2 % faster. It skips pyannote's ~9-12 s model load, but its CPU embedding pass is slower than pyannote on MPS.
+   Tried on 4 min of the system track: CPU 4 threads 13.1 s, 8 threads 16.8 s, CoreML execution provider 16.7 s,
+   so 4 CPU threads is its best setting on this Mac.
+2. **Worse speaker counting**, the known weak spot (no VBx/PLDA): one extra speaker on the in-room and bleed
+   fixtures, 7 clusters for 3 remote voices on 60 min (DER +10.3 pp), and the single-voice mic split into 3 when
+   the mic check is off. On short, clean, two-voice tracks it is within +0.6 pp of pyannote.
+3. **Memory:** no torch for the full pass, so RSS is ~0.1-0.2 GB lower on 12 min, and 0.50 GB with the mic check
+   off (torch never imported). On 60 min its RSS was higher (1.70 vs 1.18 GB; pyannote's Metal memory is partly
+   outside RSS, so the true gap is smaller). Swap deltas were noise under "warn" (-0.9 to +2.1 GB for both engines).
+4. **Clustering threshold sweep** (1 run each, warn): 0.9 fixes the over-splitting on 12 min and is now the
+   default (`sherpa_cluster_threshold`); 0.7 sits between.
+
+   | Fixture | pyannote | sherpa 0.5 | sherpa 0.7 | sherpa 0.9 |
+   |---|---|---|---|---|
+   | 12 min | 4.2 %, 3/3 | 4.8 %, 3/3 | - | 4.8 %, 3/3 |
+   | 12 min in-room | 6.0 %, 4/4 | 9.9 %, 5/4 | 7.9 %, 4/4 | 7.7 %, 4/4 |
+   | 12 min bleed | 4.6 %, 3/3 | 6.6 %, 4/3 | 6.6 %, 4/3 | 5.6 %, 3/3 |
+   | 60 min | 5.2 %, 4/4 | 15.5 %, 8/4 | 7.2 %, 5/4 | 7.2 %, 5/4 |
+
+   (DER collar 0, speakers hyp/ref.) At 0.9 sherpa is within +0.6 to +2.0 pp of pyannote and gets the count right
+   on 3 of 4 fixtures (60 min still has one extra remote cluster); it stays slower.
+5. The plan's adoption bar (DER within +2 pp, speaker count right in >= 80 % of files, >= 5x faster, no rise in
+   peak memory) fails on speed (needs >= 5x faster, measured 0.8-1.0x) even after
+   tuning; DER (+2 pp) and speaker count (3/4 = 75 % < 80 %) are borderline at 0.9.
+
+**Recommendation:** keep pyannote community-1 as the default. Keep sherpa-onnx as an opt-in, torch-free and
+token-free engine only (useful where the HF gate or torch is the problem, not for speed); at threshold 0.9 it
+is a reasonable candidate for the ungated fallback tier (instead of agglomerative wespeaker clustering) once it is
+checked on real meetings. The speed
+lever for Phase 3 is the ANE path (FluidAudio, 3.4), not ONNX on CPU. No Vietnamese real-meeting DER exists yet
+(plan 0.2b / 3.2): all numbers are synthetic `say` voices, which are easier to separate than real people.
 
 ## Sources
 

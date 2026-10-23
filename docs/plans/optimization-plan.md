@@ -3,7 +3,8 @@
 Date: 2026-10-23. Status: **W1 done, W2 started**: Phase 0 harness (0.1, 0.2a synthetic fixtures, 0.4 run labels),
 1.1 mic-track skip, the long-block hallucination fix and 1.2 single encoder pass are built; Phase 4 adaptive
 keep-warm and 2.2 (Ollama unload under pressure) are built, **gains unmeasured**; baseline under "normal"
-pressure, real fixtures (0.2b), `diar_bench` (0.3), the baseline report (0.5), 2.1, 2.3-2.5 are open. Results: section 7. Machine: M1 Pro, 16 GB, macOS 15.5, memory pressure
+pressure, real fixtures (0.2b), the baseline report (0.5), 2.1, 2.3-2.5 are open. 0.3 `diar_bench` and 3.3
+sherpa-onnx (opt-in, not adopted) are built and measured; keep-warm measured (no gain under warn). Results: sections 7-9. Machine: M1 Pro, 16 GB, macOS 15.5, memory pressure
 usually "warn" with 16-20 GB swap. Inputs: [`native-backend.md`](../research/native-backend.md),
 [`diarization-alternatives.md`](../research/diarization-alternatives.md),
 [`one-click-install.md`](../research/one-click-install.md), [`live-polish.md`](../research/live-polish.md),
@@ -109,7 +110,7 @@ also the cheapest task with the biggest chance of changing the plan.
   `bench/meeting_fixture.py` (seeded `say` meetings, any length, 1-6 remote voices, optional second local voice
   and bleed, reference JSON + RTTM) and `bench/bench_metrics.py` (DER with optimal mapping and collar, WER per
   track, vm_stat / swap parsing). MPS allocation is not recorded (process RSS + MLX peak only). Open: 0.2b real
-  fixtures, 0.3 `diar_bench`, 0.5 clean-vs-warn baseline (pressure was "warn" for every run so far).
+  fixtures, 0.5 clean-vs-warn baseline (pressure was "warn" for every run so far).
 
 ---
 
@@ -227,6 +228,15 @@ not the host language, and the ANE path also takes diarization off the GPU that 
   ungated fallback tier replacing agglomerative clustering.
 - **Effort:** 9-13 days. **Decisions:** new config key `diarization_engine` (public API); bundling the FluidAudio
   binary and models; whether a passing engine becomes the default.
+- **Status (2026-10-23):** 0.3 `bench/diar_bench.py` built (diarize stage only, fresh low-priority process per run:
+  load + diarize time, peak RSS, swap, pressure, DER c0/c0.25 overall and per track, speaker-count error). 3.3 built
+  as opt-in: `diarization_engine = "sherpa-onnx"` (default `"pyannote"`), plus `sherpa_embedding_model` and
+  `sherpa_cluster_threshold` (new public keys, decision 7), optional extra `uv sync --extra sherpa`, ungated
+  sha-pinned models fetched on first use into `models/sherpa-onnx/` (seg-3.0 MIT + CAM++ Apache-2.0; licenses in
+  `diarization-alternatives.md` section 6); mic voice check and failures use pyannote. **Measured (section 9): not
+  adopted** - 7-24 % slower than community-1 on MPS; at the original threshold 0.5 +0.6 to +10.3 pp DER and a wrong
+  speaker count on 3 of 4 fixtures; at 0.9 (now the default) +0.6 to +2.0 pp and 1 of 4 wrong. Default stays pyannote.
+  3.2 (vi real-meeting DER set) still open, so no Vietnamese DER for any engine yet.
 
 ### Phase 4: warm worker
 
@@ -254,6 +264,10 @@ the RAM cost. AGENTS rule 9 still holds: never spawned at launch or while record
   models at once; revisit with a background load after 2.1). **To measure:** second queued job's time to first
   transcribe (target ≥ 5 s earlier), worker peak RSS with both models warm under normal pressure, swap delta,
   how often "auto" actually keeps models on this Mac (pressure is usually warn), and the live→Stop whisper handoff.
+  **Measured (section 9, 1 run each, warn):** two queued 12 min jobs in one process: job 2 is 11-13 s faster than job 1
+  in every mode, including `false` (imports and file cache); `auto` vs `false` vs `true` differ by <= 3 s on job 2
+  (187.1 / 188.1 / 185.5 s), peak RSS 1.29-1.58 GB and MLX peak 1.25 GB in all modes. Under "warn" `auto` releases
+  like `false`, as designed; the gain needs "normal" pressure, which this Mac did not reach.
 
 ### Phase 5: live transcription (design A) memory-warn policy
 
@@ -487,3 +501,43 @@ skipped, nice 10 + utility QoS, one job at a time. "before" = e372e15 (W1 head),
 - Diarize did not change (no code change there). A first "before" pair run from a bare git worktree fell back to
   clustering (no `.env`/`models` there; diarize 12 s, DER 4.1 %) and was discarded (`w2-before-nopyannote-invalid`
   in results.jsonl).
+
+## 9. Measurements (W3: diarization engines, keep-warm)
+
+M1 Pro 16 GB, **on AC**, nice 10 + utility QoS, one heavy job at a time, Ollama models not resident. Waited 10 min
+for "normal" pressure before the first run and never got a clean run: every row is **warn** (`--allow-warn`;
+some runs started "normal"), swap ~17-19 GB used. Synthetic `say` fixtures only (no Vietnamese real meetings yet).
+Full tables and the threshold sweep: `diarization-alternatives.md` section 7.
+
+`diar_bench.py run <fixture> --engine pyannote|sherpa-onnx --repeat 2` (diarize stage only, medians; DER and speaker
+counts identical across repeats):
+
+| Fixture | Engine | Time (load + diarize) | DER c0 / c0.25 | Speakers hyp/ref | Peak RSS |
+|---|---|---|---|---|---|
+| 12 min, 1 local + 2 remote | pyannote community-1 (MPS) | 62.4 s | 4.2 % / 0.2 % | 3/3 | 0.73 GB |
+| | sherpa-onnx (CPU, thr 0.5) | 68.0 s | 4.8 % / 0.4 % | 3/3 | 0.70 GB |
+| 12 min, 2 local + 2 remote | pyannote | 113.6 s | 6.0 % / 1.6 % | 4/4 | 0.68 GB |
+| | sherpa | 130.2 s | 9.9 % / 5.0 % | 5/4 | 0.60 GB |
+| 12 min, bleed | pyannote | 64.5 s | 4.6 % / 0.3 % | 3/3 | 0.84 GB |
+| | sherpa | 69.2 s | 6.6 % / 1.7 % | 4/3 | 0.64 GB |
+| 60 min, 1 local + 3 remote | pyannote | 286.3 s | 5.2 % / 1.0 % | 4/4 | 1.18 GB |
+| | sherpa | 353.5 s | 15.5 % / 10.8 % | 8/4 | 1.70 GB |
+
+- Threshold 0.9 (1 run each): sherpa DER 4.8 / 7.7 / 5.6 / 7.2 %, speakers right on 3 of 4; same speed.
+- Diarize on 60 min is now 274 s with the mic check (target M1 <= 500 s met on synthetic audio; M2 <= 150 s needs
+  a ~2x faster engine: sherpa-onnx on CPU is not it, FluidAudio/ANE (3.4) is the next candidate).
+- Peak RSS is process RSS; pyannote's MPS buffers are partly outside it. Swap deltas under warn were noise.
+
+Keep-warm (Phase 4 "to measure"), `pipeline_bench.py run <12 min> --jobs 2 --set keep_models_warm=false|auto|true`
+(two queued jobs in one process with one model cache, as the worker; 1 run each, warn):
+
+| keep_models_warm | job 1 | job 2 | peak RSS | MLX peak | swap delta | swap-outs |
+|---|---|---|---|---|---|---|
+| false | 199.1 s | 188.1 s | 1.40 GB | 1.25 GB | +905 MB | 5.3 GB |
+| auto | 200.8 s | 187.1 s | 1.58 GB | 1.25 GB | +329 MB | 2.6 GB |
+| true | 197.2 s | 185.5 s | 1.29 GB | 1.25 GB | +710 MB | 3.4 GB |
+
+- Job 2 is 11-13 s faster than job 1 in every mode, including `false` (warm imports and file cache), so the
+  keep-warm gain itself is <= 3 s here; WER/DER identical. Under "warn" `auto` releases like `false` by design, so
+  its real gain needs "normal" pressure, which this Mac did not reach. Single runs: differences are within noise.
+
