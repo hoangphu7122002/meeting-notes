@@ -53,7 +53,7 @@ Notes on numbers: collars, overlap scoring and reference labels differ across so
 
 1. **Default (do now):** community-1 bundled as a local dir with CC-BY attribution (or mirrored under our own account), no token. Zero quality change. Keep the existing wespeaker clustering as last fallback.
 2. **Fallback candidate to evaluate:** sherpa-onnx (or Senko) as an ungated, torch-free second tier replacing the current agglomerative fallback. Likely better than the present fallback at near-zero download cost. **Measured 2026-10-23 (section 7): built as opt-in; slower than pyannote on MPS and over-splits speakers on 60 min, so neither default nor fallback yet.**
-3. **Watch/optional:** FluidAudio CLI as an opt-in fast path (ANE, community-1 weights) if diarization time on M1 Pro matters.
+3. **Watch/optional:** FluidAudio CLI as an opt-in fast path (ANE, community-1 weights) if diarization time on M1 Pro matters. **Measured 2026-10-23 (section 8): built as opt-in (`diarization_engine = "fluidaudio"`); DER within +0.3 pp of community-1 torch and 3.8-6.7x faster on the synthetic fixtures; not default yet (no vi real-meeting DER, binary not bundled, peak memory not lower).**
 4. **Do not adopt:** DiariZen (non-commercial weights), Sortformer 4spk (4-speaker cap), Nemotron-3 (NVIDIA-only), Reverb/Falcon (gated, proprietary).
 
 ## 5. Benchmark plan (using existing `pipeline/bench`)
@@ -144,6 +144,67 @@ is a reasonable candidate for the ungated fallback tier (instead of agglomerativ
 checked on real meetings. The speed
 lever for Phase 3 is the ANE path (FluidAudio, 3.4), not ONNX on CPU. No Vietnamese real-meeting DER exists yet
 (plan 0.2b / 3.2): all numbers are synthetic `say` voices, which are easier to separate than real people.
+
+## 8. Measured: FluidAudio (Core ML community-1 on ANE) vs pyannote (2026-10-23)
+
+**Licenses and download (verified 2026-10-23).** SDK `FluidInference/FluidAudio` Apache-2.0 (GitHub license API),
+pinned at release `0.17.7` (SwiftPM `exact:`). It also links the prebuilt `NemoTextProcessing.xcframework`
+(FluidInference/text-processing-rs v0.3.1, checksum-pinned by the SDK; unused by diarization). Weights:
+`FluidInference/speaker-diarization-coreml`, HF `gated: false`, anonymous HTTPS download works; the SDK pins the
+repo to commit `df2625ac79a7ac6b65ad868fee6d80f320da4232`. The offline set (`Segmentation`, `FBank`, `Embedding`,
+`PldaRho` `.mlmodelc`, `plda-parameters.json`, `xvector-transform.json`, ~21 MB) is CC-BY-4.0 per the repo's
+NOTICE.md (Core ML conversion of pyannote community-1, CC-BY-4.0; PLDA from BUT Speech@FIT, CC-BY-4.0 incl.
+commercial); legacy 3.1 conversions in the same repo are MIT (segmentation-3.0) / CC-BY-4.0 (WeSpeaker) and are not
+downloaded. Attribution if shipped: pyannote, WeSpeaker, BUT Speech@FIT, Fluid Inference, link CC-BY-4.0, state
+"modified Core ML conversion". The SDK reads `HF_TOKEN` if set; our adapter strips it, so no token ever leaves.
+
+**Integration.** `app/Sources/MeetingNotesDiarize` (executable target, imports only Foundation/AVFoundation/CoreML/
+FluidAudio, enforced by `check-swift-arch.sh`) runs `OfflineDiarizerManager` (segmentation + WeSpeaker + PLDA + VBx,
+community defaults, compute units `.all`) on one WAV and prints JSON turns; `--prepare` downloads and compiles the
+models into `models/fluidaudio/`. `adapters/outbound/fluidaudio_diarizer.py` writes each track to a temporary WAV and
+shells out (one process per track; Core ML load ~0.3-0.9 s each, included in the times below). Like sherpa, the mic
+single-voice check and every failure use pyannote. Not bundled into the app yet.
+
+**Bench.** Same harness and fixtures as section 7 (`diar_bench.py`, M1 Pro 16 GB on AC, nice 10 + utility QoS,
+one job at a time, medians of `--repeat 2` unless noted; DER and speaker counts identical across repeats). Every
+run **warn** pressure except one m12-bleed run that started and stayed normal; the second m12-bleed run overlapped
+~15 s with another agent's pipeline_bench start-up (timing only). `fluidaudio-nocheck` = `mic_voice_check = false`
+(mic diarized by FluidAudio too, torch never imported), one run. Peak RSS = Python process; CLI = largest child
+(`RUSAGE_CHILDREN`, new `child_rss_gb` column), so the true peak is at most their sum. pyannote rows from section 7.
+
+| Fixture | Engine | Time (load + diarize) | Speed-up | DER c0 / c0.25 | DER system | Speakers hyp/ref | Peak RSS (Python + CLI) |
+|---|---|---|---|---|---|---|---|
+| 12 min, 1 local + 2 remote | pyannote | 62.4 s | 1x | 4.2 % / 0.2 % | 5.1 % | 3/3 | 0.73 GB |
+| | fluidaudio | 16.6 s | 3.8x | 4.4 % / 0.2 % | 5.5 % | 3/3 | 0.66 + 0.40 GB |
+| | fluidaudio-nocheck | 10.8 s | 5.8x | 5.1 % / 0.3 % | 5.5 % | 3/3 | 0.43 + 0.45 GB (no torch) |
+| 12 min, 2 local + 2 remote | pyannote | 113.6 s | 1x | 6.0 % / 1.6 % | 4.6 % | 4/4 | 0.68 GB |
+| | fluidaudio | 20.3 s | 5.6x | 6.0 % / 1.4 % | 4.9 % | 4/4 | 0.66 + 0.42 GB |
+| 12 min, speaker bleed on mic | pyannote | 64.5 s | 1x | 4.6 % / 0.3 % | 5.1 % | 3/3 | 0.84 GB |
+| | fluidaudio | 13.4 s | 4.8x | 4.9 % / 0.4 % | 5.6 % | 3/3 | 0.77 + 0.44 GB |
+| | fluidaudio-nocheck | 13.1 s | 4.9x | 5.4 % / 0.5 % | 5.6 % | 3/3 | 0.43 + 0.41 GB (no torch) |
+| 60 min, 1 local + 3 remote | pyannote | 286.3 s (12.1 + 274.2) | 1x | 5.2 % / 1.0 % | 7.2 % | 4/4 | 1.18 GB |
+| | fluidaudio | 42.8 s (35.4-50.3) | 6.7x | 5.5 % / 1.2 % | 7.8 % | 4/4 | 1.54 + 0.61 GB |
+| | fluidaudio-nocheck | 53.2 s | 5.4x | 6.3 % / 1.4 % | 7.8 % | 4/4 | 1.31 + 0.58 GB (no torch) |
+
+Findings:
+
+1. **Quality matches community-1 torch:** +0.0 to +0.3 pp DER with the default mic check, speaker count right on
+   4/4 fixtures (sherpa: 1-3 wrong). Torch-free (mic diarized too) it stays within +1.1 pp and counts right, unlike
+   sherpa (28 % DER, mic split in 3). Same model family, so this is expected; vendor numbers (VoxConverse +3 pp vs
+   torch) are not reproduced on these fixtures.
+2. **Fast:** 3.8-6.7x less wall time (RTF 0.012-0.027 vs 0.074-0.145), largest on 60 min; no 9-12 s model load.
+   Most of the remaining 12 min time is the pyannote mic voice check (torch import + embeddings): without it the
+   12 min fixture takes 10.8 s.
+3. **Memory is not lower:** the CLI peaks at 0.40-0.61 GB while the Python process still holds the decoded tracks
+   (and torch for the voice check); on 60 min the Python side measured 1.54 GB vs 1.18 GB for pyannote (whose
+   Metal buffers are partly outside RSS). Swap deltas are noise under warn.
+4. Against the plan's default bar: DER within +2 pp, speaker count right, >= 5x on 60 min all pass on the
+   synthetic set; "no rise in peak memory" fails on this measure, and the vi real-meeting set (3.2) is missing.
+
+**Recommendation:** keep pyannote as the default for now; ship FluidAudio as the opt-in fast engine (committed:
+`diarization_engine = "fluidaudio"`, `fluidaudio_cli`). Next: run it on the vi real-meeting set (3.2); if it holds,
+bundle the helper (+ CC-BY notices) via `scripts/build-app.sh` and make it the default with pyannote as fallback; a
+FluidAudio-based mic voice check would drop torch from the diarize stage entirely.
 
 ## Sources
 

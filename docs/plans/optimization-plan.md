@@ -4,7 +4,7 @@ Date: 2026-10-23. Status: **W1 done, W2 started**: Phase 0 harness (0.1, 0.2a sy
 1.1 mic-track skip, the long-block hallucination fix and 1.2 single encoder pass are built; Phase 4 adaptive
 keep-warm and 2.2 (Ollama unload under pressure) are built, **gains unmeasured**; baseline under "normal"
 pressure, real fixtures (0.2b), the baseline report (0.5), 2.1, 2.3-2.5 are open. 0.3 `diar_bench` and 3.3
-sherpa-onnx (opt-in, not adopted) are built and measured; keep-warm measured (no gain under warn). Results: sections 7-9. Machine: M1 Pro, 16 GB, macOS 15.5, memory pressure
+sherpa-onnx (opt-in, not adopted) and 3.4 FluidAudio (opt-in, 3.8-6.7x faster at +0.3 pp DER) are built and measured; keep-warm measured (no gain under warn). Results: sections 7-9. Machine: M1 Pro, 16 GB, macOS 15.5, memory pressure
 usually "warn" with 16-20 GB swap. Inputs: [`native-backend.md`](../research/native-backend.md),
 [`diarization-alternatives.md`](../research/diarization-alternatives.md),
 [`one-click-install.md`](../research/one-click-install.md), [`live-polish.md`](../research/live-polish.md),
@@ -237,6 +237,14 @@ not the host language, and the ANE path also takes diarization off the GPU that 
   adopted** - 7-24 % slower than community-1 on MPS; at the original threshold 0.5 +0.6 to +10.3 pp DER and a wrong
   speaker count on 3 of 4 fixtures; at 0.9 (now the default) +0.6 to +2.0 pp and 1 of 4 wrong. Default stays pyannote.
   3.2 (vi real-meeting DER set) still open, so no Vietnamese DER for any engine yet.
+- **Status 3.4 (2026-10-23): built as opt-in, measured.** `diarization_engine = "fluidaudio"` + `fluidaudio_cli`
+  (new public key, empty = `app/.build` or PATH): helper `app/Sources/MeetingNotesDiarize` (FluidAudio 0.17.7, SDK
+  Apache-2.0, ungated commit-pinned CC-BY-4.0 weights in `models/fluidaudio/`, no token), Python adapter
+  `adapters/outbound/fluidaudio_diarizer.py` shells out per track; mic voice check and failures use pyannote. Not
+  bundled in the app. Synthetic fixtures (`diarization-alternatives.md` section 8, all under warn): DER +0.0 to
+  +0.3 pp vs community-1 torch, speaker count right 4/4, **3.8-6.7x faster** (60 min: 286 s -> 43 s), but peak
+  memory not lower (Python 1.54 GB + CLI 0.61 GB vs 1.18 GB on 60 min). Passes the default bar except memory and the
+  missing vi set (3.2); default stays pyannote until 3.2 and bundling (decision: ship binary + CC-BY notices).
 
 ### Phase 4: warm worker
 
