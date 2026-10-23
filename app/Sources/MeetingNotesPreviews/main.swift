@@ -3,8 +3,8 @@ import MeetingNotesCore
 import MeetingNotesUI
 import SwiftUI
 
-// `swift run MeetingNotesPreviews <dir>`: renders the pill (collapsed + expanded) and the main window in
-// every state, light and dark, at 2x, into <dir>. Offscreen only: no window is ever ordered on screen,
+// `swift run MeetingNotesPreviews <dir>`: renders the pill (collapsed + expanded), the main window in
+// every state and the Settings window, light and dark, at 2x, into <dir>. Offscreen only: no window is ever ordered on screen,
 // nothing is recorded, and the app is not started (this target does not contain it).
 // The renderer process is never active, so AppKit draws prominent (tinted) buttons in their inactive
 // grey style, as in a background window.
@@ -135,6 +135,26 @@ func renderWindow(_ scenario: Scenario, lang: UILanguage, appearance: Appearance
     window.close()
 }
 
+@MainActor
+func renderSettings(_ variant: SettingsVariant, lang: UILanguage, appearance: Appearance, dir: URL) {
+    LanguageModel.shared.set(lang)
+    let (state, values, memory) = Fixtures.settings(variant, lang)
+    let view = SettingsView(state: state, commands: NoCommands(), detectionSupported: true, values: values, memoryGB: memory,
+                            version: "1.4.0 (812)", defaultNotesDir: Fixtures.notesDir, advancedOpen: variant != .basic,
+                            height: nil)
+    // The window is 540x760 (Advanced scrolls); previews are taller so every row of an open Advanced group shows.
+    let size = CGSize(width: 540, height: variant == .basic ? 760 : 1120)
+    let hosting = NSHostingView(rootView: view)
+    hosting.sizingOptions = []
+    let window = Renderer.host(hosting, size: size, appearance: appearance.appearance)
+    Renderer.spin(0.15)
+    let name = "settings-\(variant.rawValue)-\(lang.rawValue)-\(appearance.rawValue).png"
+    Renderer.write(Renderer.bitmap(hosting), dir.appendingPathComponent(name))
+    print("\(name)\t\(Int(size.width))x\(Int(size.height)) pt")
+    window.contentView = nil
+    window.close()
+}
+
 MainActor.assumeIsolated {
     let arguments = CommandLine.arguments.dropFirst()
     guard let path = arguments.first(where: { !$0.hasPrefix("-") }) else {
@@ -164,6 +184,11 @@ MainActor.assumeIsolated {
                 renderPill(scenario, expanded: expanded, lang: .en, appearance: appearance, dir: dir)
             }
             if wanted("window-\(scenario.rawValue)") { renderWindow(scenario, lang: .en, appearance: appearance, dir: dir) }
+        }
+        for variant in SettingsVariant.allCases {
+            for lang in UILanguage.allCases where wanted("settings-\(variant.rawValue)") {
+                renderSettings(variant, lang: lang, appearance: appearance, dir: dir)
+            }
         }
         if wanted("window-recording-warning") {
             renderWindow(.recordingWarning, lang: .vi, appearance: appearance, dir: dir, fullHeight: false)

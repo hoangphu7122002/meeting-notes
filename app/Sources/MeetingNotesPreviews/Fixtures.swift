@@ -208,4 +208,37 @@ enum Fixtures {
         }
         return state
     }
+
+    /// Settings window variants: defaults (collapsed), Advanced open, and every warning state at once.
+    static func settings(_ variant: SettingsVariant, _ lang: UILanguage) -> (AppState, SettingsValues, memoryGB: Double) {
+        let state = self.state(.idle, lang)
+        var values = SettingsValues()
+        var memory = 16.0
+        switch variant {
+        case .basic:
+            break
+        case .advanced:
+            values.liveTranscription = true
+            values.livePolish = true
+        case .attention:
+            state.microphone = .denied
+            state.screenCapture = .notDetermined
+            var setup = SetupMachine(done: [.runtime])
+            setup.start()
+            state.setup = setup
+            state.notesDir = URL(fileURLWithPath: "/Users/demo/Documents/Work notes", isDirectory: true)
+            values.login = .requiresApproval
+            values.detection = false
+            values.createNotesMode = .whenIdle
+            values.summaryModel = .better
+            values.silenceMinutes = 0
+            values.pillMode = .never
+            memory = 8
+        }
+        return (state, values, memory)
+    }
+}
+
+enum SettingsVariant: String, CaseIterable {
+    case basic, advanced, attention
 }
