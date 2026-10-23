@@ -114,6 +114,18 @@ def warm_diarizer(cfg: Config) -> None:
     Diarizer(cfg).pipeline()
 
 
+def prepare_fluidaudio(cfg: Config, log) -> Path:
+    from ..adapters.outbound.fluidaudio_diarizer import FluidAudioDiarizer
+
+    return FluidAudioDiarizer(cfg, log=log).prepare()
+
+
+def fluidaudio_status(cfg: Config) -> str:
+    from ..adapters.outbound.fluidaudio_diarizer import status
+
+    return status(cfg)
+
+
 def check_hf_access(models: list[str]) -> dict[str, str]:
     from ..adapters.outbound.hf_hub import check_hf_access as check
 
@@ -156,4 +168,5 @@ def command_deps() -> CommandDeps:
         make_worker=make_worker, check_hf_access=check_hf_access, cached_status=cached_status,
         download_model=download_model, warm_diarizer=warm_diarizer, find_ffmpeg=find_ffmpeg,
         read_app_state=read_app_state, send_app_command=send_app_command, make_live=make_live,
+        prepare_fluidaudio=prepare_fluidaudio, fluidaudio_status=fluidaudio_status,
     )

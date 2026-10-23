@@ -27,22 +27,20 @@ whisper_condition_on_previous_text = false # true feeds earlier text back in: mo
 whisper_max_chunk_sec = 28.0               # whisper applies the prompt only to the first 30 s of each call
 mlx_cache_limit_mb = 256                   # MLX buffer cache cap while transcribing (-1 = unbounded, ~2.5 GB more on 1 h)
 
-# Diarization: gated pyannote pipelines tried in order (need HF_TOKEN + accepted terms),
-# then an ungated voice-embedding clustering fallback.
+# Diarization engine: "fluidaudio" (default) runs FluidAudio's Core ML port of pyannote community-1 on the Neural
+# Engine through the helper CLI MeetingNotesDiarize, bundled in MeetingNotes.app and found automatically (app bundle,
+# then app/.build, then PATH). Its ungated weights (~21 MB) download on first use into models/fluidaudio/, no login.
+# If the helper is missing or fails, the pyannote path below runs instead (noted in transcript.json).
+# "pyannote": the gated pyannote pipelines, tried in order (need HF_TOKEN + accepted terms), then an ungated
+# voice-embedding clustering fallback. "sherpa-onnx" (opt-in, experimental): ungated ONNX models on CPU; needs
+# `uv sync --extra sherpa` in pipeline/; models download on first use into models/sherpa-onnx/.
+diarization_engine = "fluidaudio"
+fluidaudio_cli = ""         # path override for the FluidAudio helper; empty = automatic
 diarization_models = ["pyannote/speaker-diarization-community-1", "pyannote/speaker-diarization-3.1"]
-cluster_threshold = 0.6     # fallback only: lower splits voices more eagerly
-diarization_device = "auto" # auto | mps | cpu
-# Diarization engine: "pyannote" (default) | "sherpa-onnx" (opt-in, experimental): ungated ONNX models on CPU
-# (pyannote segmentation-3.0, MIT + 3D-Speaker CAM++, Apache-2.0), no HF token for the full pass. Needs
-# `uv sync --extra sherpa` in pipeline/; models download on first use into models/sherpa-onnx/. If it is missing
-# or fails, pyannote runs instead. The mic single-voice check still uses the pyannote embedding model.
-diarization_engine = "pyannote"
+cluster_threshold = 0.6     # clustering fallback only: lower splits voices more eagerly
+diarization_device = "auto" # auto | mps | cpu (pyannote)
 sherpa_embedding_model = "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced"
 sherpa_cluster_threshold = 0.9  # sherpa only: lower = more speakers
-# "fluidaudio" (opt-in, experimental): Core ML port of community-1 on the Neural Engine via the helper CLI
-# (`swift build -c release --product MeetingNotesDiarize` in app/); ungated weights download on first use into
-# models/fluidaudio/. Falls back to pyannote if the binary is missing or fails. Empty = app/.build or PATH.
-fluidaudio_cli = ""
 me_name = "Me"
 mic_speakers = "auto"       # "me": everything on the microphone is you
 # Check with a few voice embeddings whether the microphone holds only your voice; if sure, skip full

@@ -48,10 +48,12 @@ def calls(monkeypatch):
             counter["transcribe"] += 1
             return super().transcribe(audio, language)
 
+    import meeting_notes.adapters.outbound.fluidaudio_diarizer as F
     import meeting_notes.adapters.outbound.mlx_transcriber as T
     import meeting_notes.adapters.outbound.pyannote_diarizer as D
 
     monkeypatch.setattr(D, "Diarizer", Diarizer)
+    monkeypatch.setattr(F, "FluidAudioDiarizer", Diarizer)
     monkeypatch.setattr(T, "Transcriber", Transcriber)
     return counter
 

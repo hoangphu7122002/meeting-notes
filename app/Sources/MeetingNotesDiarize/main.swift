@@ -2,8 +2,10 @@
 //   MeetingNotesDiarize <audio.wav> [--models DIR] [--rttm PATH] [--threshold X] [--min-speakers N] [--max-speakers N]
 //              [--num-speakers N] [--compute all|cpu|cpu-gpu|cpu-ane]
 //   MeetingNotesDiarize --prepare [--models DIR]      download (no token) + compile models, then exit
-// Helper for the pipeline's opt-in `diarization_engine = "fluidaudio"` (adapters/outbound/fluidaudio_diarizer.py).
+// Helper for the pipeline's default `diarization_engine = "fluidaudio"` (adapters/outbound/fluidaudio_diarizer.py),
+// bundled in MeetingNotes.app/Contents/MacOS by scripts/build-app.sh.
 // Prints one JSON object on stdout: {version, load_sec, diarize_sec, audio_sec, speakers, segments: [{start, end, speaker}]}.
+// --prepare reports download/compile progress on stderr as `progress <fraction> <phase>` lines.
 import AVFoundation
 import CoreML
 import FluidAudio
@@ -73,6 +75,27 @@ func computeUnits(_ name: String) -> MLComputeUnits {
     }
 }
 
+/// Prints `progress <fraction> <phase>` on stderr when the phase changes or the fraction moves by >= 1 %.
+final class ProgressPrinter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var last = (phase: "", fraction: -1.0)
+
+    func report(_ progress: DownloadProgress) {
+        let phase: String
+        switch progress.phase {
+        case .listing: phase = "listing"
+        case .downloading(let done, let total): phase = "downloading \(done)/\(total)"
+        case .compiling(let name): phase = "compiling \(name)"
+        }
+        let fraction = progress.fractionCompleted
+        lock.lock()
+        defer { lock.unlock() }
+        guard phase != last.phase || fraction - last.fraction >= 0.01 || (fraction >= 1 && last.fraction < 1) else { return }
+        last = (phase, fraction)
+        FileHandle.standardError.write("progress \(String(format: "%.3f", fraction)) \(phase)\n".data(using: .utf8)!)
+    }
+}
+
 func emit(_ object: [String: Any]) {
     let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     FileHandle.standardOutput.write(data)
@@ -92,12 +115,19 @@ let modelsDir = opts.models.map { URL(fileURLWithPath: $0, isDirectory: true) }
 do {
     let t0 = Date()
     let manager = OfflineDiarizerManager(config: config)
-    try await manager.prepareModels(directory: modelsDir, configuration: mlConfig)
-    let loadSec = Date().timeIntervalSince(t0)
     if opts.prepareOnly {
-        emit(["version": version, "load_sec": loadSec, "segments": []])
+        do {  // with progress; a broken cache falls through to prepareModels, which purges and downloads again
+            let printer = ProgressPrinter()
+            _ = try await OfflineDiarizerModels.load(from: modelsDir, configuration: mlConfig) { printer.report($0) }
+        } catch {
+            FileHandle.standardError.write("model load failed (\(error)); downloading again\n".data(using: .utf8)!)
+            try await manager.prepareModels(directory: modelsDir, configuration: mlConfig)
+        }
+        emit(["version": version, "load_sec": Date().timeIntervalSince(t0), "segments": []])
         exit(0)
     }
+    try await manager.prepareModels(directory: modelsDir, configuration: mlConfig)
+    let loadSec = Date().timeIntervalSince(t0)
     let url = URL(fileURLWithPath: opts.input!)
     let file = try AVAudioFile(forReading: url)
     let audioSec = Double(file.length) / file.fileFormat.sampleRate

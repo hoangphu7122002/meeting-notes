@@ -88,6 +88,9 @@ final class WorkerClient {
         environment["PYTHONUNBUFFERED"] = "1"
         environment["MEETING_NOTES_PRIORITY"] = priority
         environment["MEETING_NOTES_OLLAMA_MODEL"] = model
+        environment = DiarizeHelper.workerEnvironment(environment, executableURL: Bundle.main.executableURL) {
+            fm.isExecutableFile(atPath: $0)
+        }
         process.environment = environment
 
         let input = Pipe(), output = Pipe(), errors = Pipe()

@@ -117,7 +117,7 @@ class Models:
         timings = {}
         t = time.monotonic()
         d = self.diarizer()
-        if hasattr(d, "engine"):  # sherpa-onnx: the full pass needs no torch model
+        if hasattr(d, "engine"):  # sherpa-onnx / FluidAudio: the full pass needs no torch model
             d.engine()
         elif d.pipeline() is None:
             d.embedder()
@@ -141,20 +141,20 @@ class Models:
 
 
 def make_diarizer(cfg: Config, log: Callable[[str], None] = print):
-    """The diarizer for `diarization_engine`: "sherpa-onnx" / "fluidaudio" (opt-in) or pyannote (default, also for
-    unknown values)."""
+    """The diarizer for `diarization_engine`: "pyannote", "sherpa-onnx" (opt-in) or FluidAudio (default, also for
+    unknown values; it falls back to pyannote by itself)."""
     engine = str(cfg.diarization_engine).strip().lower()
-    if engine == "fluidaudio":
-        from .fluidaudio_diarizer import FluidAudioDiarizer
+    if engine == "pyannote":
+        from .pyannote_diarizer import Diarizer
 
-        return FluidAudioDiarizer(cfg, log=log)
+        return Diarizer(cfg, log=log)
     if engine in ("sherpa-onnx", "sherpa"):
         from .sherpa_diarizer import SherpaDiarizer
 
         return SherpaDiarizer(cfg, log=log)
-    from .pyannote_diarizer import Diarizer
+    from .fluidaudio_diarizer import FluidAudioDiarizer
 
-    return Diarizer(cfg, log=log)
+    return FluidAudioDiarizer(cfg, log=log)
 
 
 def _trim(model) -> None:

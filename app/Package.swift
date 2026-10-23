@@ -5,7 +5,7 @@ let package = Package(
     name: "MeetingNotes",
     platforms: [.macOS(.v14)],
     dependencies: [
-        // Core ML speaker diarization for the opt-in `diarization_engine = "fluidaudio"` helper only (Apache-2.0).
+        // Core ML speaker diarization for the MeetingNotesDiarize helper only (default engine, Apache-2.0).
         .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.17.7"),
     ],
     targets: [
@@ -48,7 +48,8 @@ let package = Package(
             path: "Sources/MeetingNotesPreviews"
         ),
         // `MeetingNotesDiarize <wav>`: offline diarization with FluidAudio (Core ML port of pyannote community-1),
-        // JSON on stdout; the pipeline shells out to it (adapters/outbound/fluidaudio_diarizer.py). Not in the app bundle.
+        // JSON on stdout; the pipeline shells out to it (adapters/outbound/fluidaudio_diarizer.py). scripts/build-app.sh
+        // copies it into MeetingNotes.app/Contents/MacOS; the app passes its path to the worker (DiarizeHelper).
         .executableTarget(
             name: "MeetingNotesDiarize",
             dependencies: [.product(name: "FluidAudio", package: "FluidAudio")],

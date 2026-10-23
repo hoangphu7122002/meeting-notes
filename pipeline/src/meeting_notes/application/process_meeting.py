@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 
 from ..config import Config, redact
-from ..domain.meeting_naming import DEFAULT_TITLES, describe_diarization, folder_name
+from ..domain.meeting_naming import DEFAULT_TITLES, describe_diarization, engine_used, folder_name
 from ..domain.notes_markdown import render_notes, transcript_lines
 from ..domain.notes_rules import summary_language
 from ..domain.segments import language_stats, split_long_blocks
@@ -176,11 +176,12 @@ class Processor:
             turns, methods, notes = diarize_tracks(tracks, diarizer, self.cfg, self.r)
         finally:
             self.models.done_with_diarizer()
-        note = describe_diarization(methods, notes)
-        if any("pyannote unavailable" in n for n in notes):
-            self._warn("pyannote diarization unavailable (accept the model terms on Hugging Face, see README); used fallback")
-        self.store.write_json(out, {"methods": methods, "notes": notes, "note": note, "turns": [t.to_dict() for t in turns]})
-        self.r.stage_end("diarize", message=f"{len({t.speaker for t in turns})} speaker(s), {', '.join(methods)}")
+        note, engine = describe_diarization(methods, notes), engine_used(methods)
+        if any("pyannote unavailable" in n for n in notes):  # FluidAudio (if configured) failed too
+            self._warn("full speaker diarization unavailable (FluidAudio helper and pyannote/HF_TOKEN); used fallback")
+        self.store.write_json(out, {"engine": engine, "configured": self.cfg.diarization_engine, "methods": methods,
+                                    "notes": notes, "note": note, "turns": [t.to_dict() for t in turns]})
+        self.r.stage_end("diarize", message=f"{len({t.speaker for t in turns})} speaker(s), engine {engine} ({', '.join(methods)})")
 
     def stage_transcribe(self, force: bool) -> None:
         out = self.m.file("transcript.json")
@@ -213,7 +214,8 @@ class Processor:
             "language": language,
             "languages": {k: round(v, 1) for k, v in stats.items()},
             "speakers": [s for s in speaker_order(turns, self.cfg.me_name) if s in spoken],
-            "diarization": {"methods": diar.get("methods", []), "note": diar.get("note", "")},
+            "diarization": {"engine": diar.get("engine") or engine_used(diar.get("methods", [])),
+                            "methods": diar.get("methods", []), "note": diar.get("note", "")},
             "whisper_model": self.cfg.whisper_model,
             "pauses": meeting.get("pauses") or [],
             "segments": [s.to_dict() for s in segments],

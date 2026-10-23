@@ -39,6 +39,13 @@ class CommandDeps:
     read_app_state: Callable[[], object]  # raises OSError/ValueError when unavailable
     send_app_command: Callable[[str], int]
     make_live: Callable[..., object] | None = None  # (folder, cfg, reporter, models=None, simulate=None) -> run(stop)
+    prepare_fluidaudio: Callable[[Config, Callable[[str], None]], object] | None = None  # (cfg, log) -> helper path
+    fluidaudio_status: Callable[[Config], str] | None = None
+
+
+def uses_fluidaudio(cfg: Config) -> bool:
+    """FluidAudio is the default engine (also for unknown values); "pyannote" and "sherpa-onnx" opt out."""
+    return str(cfg.diarization_engine).strip().lower() not in ("pyannote", "sherpa-onnx", "sherpa")
 
 
 def _report_failure() -> None:
@@ -118,7 +125,11 @@ def cmd_doctor(args, cfg: Config, deps: CommandDeps) -> int:
     report: dict[str, object] = {"config_file": str(CONFIG_PATH) + ("" if CONFIG_PATH.exists() else " (not present, using defaults)")}
     report["notes_dir"] = str(cfg.notes_path)
     report["ffmpeg"] = deps.find_ffmpeg()
-    report["hf_token"] = "present" if hf_token() else "missing (diarization falls back to clustering)"
+    report["diarization_engine"] = cfg.diarization_engine
+    if uses_fluidaudio(cfg) and deps.fluidaudio_status:
+        report["fluidaudio"] = deps.fluidaudio_status(cfg)
+    missing = "optional: only the pyannote fallback uses it" if uses_fluidaudio(cfg) else "diarization falls back to clustering"
+    report["hf_token"] = "present" if hf_token() else f"missing ({missing})"
     cached = deps.cached_status(cfg.whisper_model)
     if cached is None:
         report["whisper_model"] = cfg.whisper_model
@@ -152,6 +163,12 @@ def cmd_setup(args, cfg: Config, deps: CommandDeps) -> int:
     for repo in (cfg.whisper_model, cfg.embedding_model):
         print(f"Downloading {repo} ...", file=sys.stderr)
         deps.download_model(repo)
+    if uses_fluidaudio(cfg) and deps.prepare_fluidaudio:
+        print("Preparing FluidAudio diarization models (~21 MB, no login) ...", file=sys.stderr)
+        try:
+            print(f"FluidAudio ready: {deps.prepare_fluidaudio(cfg, lambda m: print(m, file=sys.stderr))}", file=sys.stderr)
+        except Exception as exc:  # setup goes on: diarization then falls back to pyannote / clustering
+            print(f"FluidAudio not ready ({redact(str(exc))[:200]}); diarization will fall back to pyannote", file=sys.stderr)
     access = deps.check_hf_access(cfg.diarization_models) if hf_token() else {}
     for model, state in access.items():
         print(f"{model}: {state}", file=sys.stderr)

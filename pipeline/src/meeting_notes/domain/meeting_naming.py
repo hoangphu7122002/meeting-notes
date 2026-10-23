@@ -22,6 +22,20 @@ def describe_diarization(methods: list[str], notes: list[str]) -> str:
     return "speakers not separated"
 
 
+FULL_ENGINES = ("fluidaudio", "pyannote", "sherpa-onnx")
+FALLBACKS = ("clustering", "vad", "single-voice")
+
+
+def engine_used(methods: list[str]) -> str:
+    """Which diarizer actually ran, from methods like "system=fluidaudio:community-1-coreml": the full engines in
+    track order joined by "+" (a track that fell back shows up as a second engine), else the strongest fallback."""
+    names = [m.split("=", 1)[-1].split(":", 1)[0] for m in methods]
+    full = list(dict.fromkeys(n for n in names if n in FULL_ENGINES))
+    if full:
+        return "+".join(full)
+    return next((f for f in FALLBACKS if f in names), "none")
+
+
 _FOLDER_PREFIX = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{4})")
 
 

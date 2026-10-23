@@ -116,13 +116,12 @@ def test_voice_check_and_release_use_the_pyannote_fallback():
 
 
 def test_engine_choice_follows_config():
-    assert isinstance(make_diarizer(Config(), log=lambda m: None), Diarizer)
+    assert isinstance(make_diarizer(Config(diarization_engine="pyannote"), log=lambda m: None), Diarizer)
     assert isinstance(make_diarizer(Config(diarization_engine="sherpa-onnx"), log=lambda m: None), SherpaDiarizer)
-    assert isinstance(make_diarizer(Config(diarization_engine="nonsense"), log=lambda m: None), Diarizer)
 
 
 def test_switching_engine_releases_the_loaded_diarizer():
-    m = Models(Config(), keep=True, log=lambda m: None, pressure=lambda: 1)
+    m = Models(Config(diarization_engine="pyannote"), keep=True, log=lambda m: None, pressure=lambda: 1)
     m.diarizer()
     m.update_config(Config(diarization_engine="sherpa-onnx"))
     assert m._diarizer is None

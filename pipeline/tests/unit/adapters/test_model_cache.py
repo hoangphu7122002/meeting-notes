@@ -14,10 +14,12 @@ class Fake:
 
 
 def models(monkeypatch, keep, level):
+    import meeting_notes.adapters.outbound.fluidaudio_diarizer as F
     import meeting_notes.adapters.outbound.mlx_transcriber as T
     import meeting_notes.adapters.outbound.pyannote_diarizer as D
 
     monkeypatch.setattr(D, "Diarizer", Fake)
+    monkeypatch.setattr(F, "FluidAudioDiarizer", Fake)
     monkeypatch.setattr(T, "Transcriber", lambda cfg: Fake(cfg))
     return Models(Config(), keep=keep, log=lambda m: None, pressure=lambda: level["now"])
 

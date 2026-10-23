@@ -43,13 +43,14 @@ class Config:
     embedding_model: str = "pyannote/wespeaker-voxceleb-resnet34-LM"
     cluster_threshold: float = 0.6  # cosine distance; lower = more speakers
     diarization_device: str = "auto"  # auto | mps | cpu
-    # Diarization engine: "pyannote" (default, above) | "sherpa-onnx" (opt-in, experimental: ungated ONNX models on
-    # CPU, no torch for the full pass; needs `uv sync --extra sherpa`; models are downloaded on first use into
-    # models/sherpa-onnx/). If sherpa-onnx is missing or fails, the pyannote path runs instead (noted).
-    # "fluidaudio" (opt-in, experimental): FluidAudio's Core ML port of community-1 on the Neural Engine through the
-    # helper CLI app/Sources/MeetingNotesDiarize (`swift build -c release --product MeetingNotesDiarize` in app/);
-    # ungated weights downloaded on first use into models/fluidaudio/. fluidaudio_cli: path override for the binary.
-    diarization_engine: str = "pyannote"
+    # Diarization engine: "fluidaudio" (default): FluidAudio's Core ML port of community-1 on the Neural Engine
+    # through the helper CLI MeetingNotesDiarize (bundled in the app; found automatically: app bundle, then
+    # app/.build, then PATH; fluidaudio_cli overrides the path). Ungated weights download on first use into
+    # models/fluidaudio/, no token. If the helper is missing or fails, the pyannote path above runs (gated pipeline
+    # with HF_TOKEN, else the ungated clustering fallback). "pyannote": that path directly. "sherpa-onnx" (opt-in,
+    # experimental: ungated ONNX models on CPU; needs `uv sync --extra sherpa`; models in models/sherpa-onnx/).
+    # Unknown values use the default.
+    diarization_engine: str = "fluidaudio"
     fluidaudio_cli: str = ""
     sherpa_embedding_model: str = "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced"
     sherpa_cluster_threshold: float = 0.9  # sherpa fast clustering; lower = more speakers (0.5 over-split, bench)

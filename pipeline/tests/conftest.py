@@ -58,10 +58,12 @@ def stubs(monkeypatch):
         def release(self):
             pass
 
+    import meeting_notes.adapters.outbound.fluidaudio_diarizer as F
     import meeting_notes.adapters.outbound.mlx_transcriber as T
     import meeting_notes.adapters.outbound.pyannote_diarizer as D
 
     monkeypatch.setattr(D, "Diarizer", FakeDiarizer)
+    monkeypatch.setattr(F, "FluidAudioDiarizer", FakeDiarizer)  # the default engine: never run the real helper here
     monkeypatch.setattr(T, "Transcriber", FakeTranscriber)
     return calls
 
