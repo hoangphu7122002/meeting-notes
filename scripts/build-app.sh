@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Build MeetingNotes.app (release), ad-hoc sign it and install it to ~/Applications.
+# Build MeetingNotes.app (release) with the MeetingNotesDiarize helper, sign both with the local identity and
+# install the app to ~/Applications.
 #
-# Usage: scripts/build-app.sh [--no-install]
+# Usage: scripts/build-app.sh [--no-install] [--force]
+#        --force  quit a running MeetingNotes even while it records (default: refuse; idle apps are quit)
 # Env:   CODESIGN_IDENTITY  signing identity. Default: the local self-signed identity created by
 #                           scripts/setup-signing.sh (created on first build), so macOS keeps
 #                           Microphone / Screen & System Audio permissions across rebuilds.
@@ -18,14 +20,20 @@ BUNDLE_ID="com.hoangphu.meetingnotes"
 VERSION="0.1.0"
 IDENTITY="${CODESIGN_IDENTITY:-}"
 INSTALL=1
+FORCE=0
+HELPER="MeetingNotesDiarize"  # FluidAudio diarization CLI; the app passes its path to the pipeline worker
 
 for arg in "$@"; do
   case "$arg" in
     --no-install) INSTALL=0 ;;
-    -h|--help) sed -n '2,7p' "$0"; exit 0 ;;
+    --force) FORCE=1 ;;
+    -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
     *) echo "unknown argument: $arg" >&2; exit 64 ;;
   esac
 done
+
+# shellcheck source=scripts/app-state.sh
+source "$ROOT/scripts/app-state.sh"
 
 xml_escape() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' <<<"$1"; }
 
@@ -35,14 +43,25 @@ if [[ -z "$UV_PATH" && -x "$HOME/.local/bin/uv" ]]; then UV_PATH="$HOME/.local/b
 UV_PATH="${UV_PATH:-/opt/homebrew/bin/uv}"
 BUILD_NUMBER="$(date +%Y%m%d%H%M)"
 
+DEST="$INSTALL_DIR/MeetingNotes.app"
+if [[ "$INSTALL" -eq 1 && "$FORCE" -eq 0 && -n "$(mn_app_pids "$DEST")" ]]; then
+  case "$(mn_app_activity)" in
+    recording|unknown)
+      echo "MeetingNotes is recording (or its state is unknown); not quitting it. Stop the recording, or pass --force." >&2
+      exit 1 ;;
+  esac
+fi
+
 echo "==> swift build -c release"
 swift build -c release --package-path "$APP_PKG"
 BIN_DIR="$(swift build -c release --package-path "$APP_PKG" --show-bin-path)"
+[[ -x "$BIN_DIR/$HELPER" ]] || { echo "missing $BIN_DIR/$HELPER after the build" >&2; exit 1; }
 
 echo "==> assembling $APP"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/MeetingNotes" "$APP/Contents/MacOS/MeetingNotes"
+cp "$BIN_DIR/$HELPER" "$APP/Contents/MacOS/$HELPER"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -82,19 +101,24 @@ if [[ -z "$IDENTITY" ]]; then
   IDENTITY="$("$ROOT/scripts/setup-signing.sh")"
 fi
 echo "==> codesign ($IDENTITY)"
-codesign --force --deep --sign "$IDENTITY" --identifier "$BUNDLE_ID" "$APP"
-codesign --verify --strict "$APP"
+# Inside out: the helper first (own identifier), then the app, whose seal covers the signed helper.
+codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID.diarize" "$APP/Contents/MacOS/$HELPER"
+codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID" "$APP"
+codesign --verify --strict --deep "$APP"
 
 if [[ "$INSTALL" -eq 1 ]]; then
-  DEST="$INSTALL_DIR/MeetingNotes.app"
-  if pgrep -f "$DEST/Contents/MacOS/MeetingNotes" >/dev/null 2>&1; then
+  if [[ -n "$(mn_app_pids "$DEST")" ]]; then
+    if [[ "$FORCE" -eq 0 && "$(mn_app_activity)" =~ ^(recording|unknown)$ ]]; then  # started during the build
+      echo "MeetingNotes started recording during the build; not installing. Built: $APP" >&2
+      exit 1
+    fi
     echo "==> quitting running MeetingNotes"
     osascript -e "quit app id \"$BUNDLE_ID\"" >/dev/null 2>&1 || true
     for _ in $(seq 1 20); do
-      pgrep -f "$DEST/Contents/MacOS/MeetingNotes" >/dev/null 2>&1 || break
+      [[ -n "$(mn_app_pids "$DEST")" ]] || break
       sleep 0.5
     done
-    pkill -f "$DEST/Contents/MacOS/MeetingNotes" >/dev/null 2>&1 || true
+    for pid in $(mn_app_pids "$DEST"); do kill "$pid" 2>/dev/null || true; done  # by PID only
   fi
   echo "==> installing to $DEST"
   mkdir -p "$INSTALL_DIR"
