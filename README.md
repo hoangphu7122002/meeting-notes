@@ -43,7 +43,7 @@ The app is signed with a stable local certificate (`scripts/setup-signing.sh`), 
 1. Open `~/Applications/MeetingNotes.app` and click **Start recording**.
 2. Allow **Microphone**, then enable **MeetingNotes** in System Settings › Privacy & Security › Screen & System Audio Recording and relaunch the app. Only audio is captured; no screen content is saved.
 3. Until the second permission is granted, recordings may be mic-only (the app shows a warning).
-4. Optional: Settings › Launch at Login.
+4. Optional: Settings › Basics › Open at login.
 
 macOS 15 asks periodically to re-confirm screen/audio access and shows a purple indicator while recording.
 
@@ -78,9 +78,9 @@ Optional `~/.config/meeting-notes/config.toml` (or `MEETING_NOTES_CONFIG`). All 
 | `live_polish` | `"off"` | `"rules"` = display-only cleanup of the live transcript |
 | `priority` | `"low"` | `low` \| `background` \| `normal` |
 
-Live transcript (off by default; Settings › Recording › Live transcript while recording): shows the last lines while you record and reuses them after Stop; notes are the same, only sooner. It adds ~1.2 GB RAM, pauses under memory pressure and on battery (`live_on_battery`), and never changes capture. Tuning keys: `live_*` in the example config. Design: [realtime](docs/research/realtime.md), [live-polish](docs/research/live-polish.md).
+Live transcript (off by default; Settings › Advanced › Show text during the meeting): shows the last lines while you record and reuses them after Stop; notes are the same, only sooner. It adds ~1.2 GB RAM, pauses under memory pressure and on battery (`live_on_battery`), and never changes capture. Tuning keys: `live_*` in the example config. Design: [realtime](docs/research/realtime.md), [live-polish](docs/research/live-polish.md).
 
-Env overrides: `MEETING_NOTES_OLLAMA_MODEL`, `MEETING_NOTES_WHISPER_MODEL`, `MEETING_NOTES_DIR`, `MEETING_NOTES_CONFIG`. Model choice and benchmarks: [phowhisper-mlx](docs/research/phowhisper-mlx.md), [speed-memory](docs/research/speed-memory.md).
+Env overrides: `MEETING_NOTES_OLLAMA_MODEL`, `MEETING_NOTES_WHISPER_MODEL`, `MEETING_NOTES_DIR`, `MEETING_NOTES_CONFIG`. The app's notes folder (Settings › After meetings › Save to) overrides `notes_dir` in config.toml, so `meeting-notes import` uses the same folder. Model choice and benchmarks: [phowhisper-mlx](docs/research/phowhisper-mlx.md), [speed-memory](docs/research/speed-memory.md).
 
 ## Troubleshooting
 
@@ -88,9 +88,9 @@ Env overrides: `MEETING_NOTES_OLLAMA_MODEL`, `MEETING_NOTES_WHISPER_MODEL`, `MEE
 |---|---|
 | "System audio not recorded" / mic-only | Grant Screen & System Audio Recording, then reopen the app |
 | Mic track silent | System Settings › Privacy & Security › Microphone; check the input device |
-| Hotkey does nothing | Another app owns it: `defaults write com.hoangphu.meetingnotes hotkey "cmd+shift+f5"`, relaunch |
+| Hotkey does nothing | Another app owns it: `defaults write com.hoangphu.meetingnotes hotkey "cmd+shift+f5"` (pause: `pauseHotkey`), relaunch; Settings shows the shortcuts read-only |
 | "Ollama is not reachable" | `brew services start ollama`, then Reprocess |
-| Summary missing or poor | `ollama list` shows the model; try Settings › Summary model › Better; `process <folder> --from summarize` |
+| Summary missing or poor | `ollama list` shows the model; try Settings › Summary quality › Thorough (overrides `ollama_model` in config.toml); `process <folder> --from summarize` |
 | Voices merged / too many speakers | Accept the pyannote terms, or tune `cluster_threshold` (lower splits more), then `--from diarize` |
 | Controls not visible | The notch may hide the menu bar icon: use the pill, Dock menu, ⌃⌥⌘R or `open meetingnotes://show` |
 | App cannot find the pipeline | Repo moved: rebuild, or `defaults write com.hoangphu.meetingnotes pipelineDir /new/path/pipeline` |

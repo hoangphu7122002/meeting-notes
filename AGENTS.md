@@ -13,7 +13,7 @@ transcribes, labels speakers and summarizes on the Mac. User docs: [`README.md`]
 6. **Config keys and env names are public API:** `config.toml` keys, `MEETING_NOTES_*` (incl. `MEETING_NOTES_DIARIZE_CLI`, set by the app for its worker), `HF_TOKEN`, `MN_PIPELINE_DIR`, Info.plist `MNPipelineDir`/`MNUvPath`/`MNPackaged`, UserDefaults keys under `com.hoangphu.meetingnotes`, the shared-install marker `shared-install.json` (`pipeline_dir`, `uv_path`, `hf_hub_cache`, `app`) and its default root `/Users/Shared/MeetingNotes`, the packaged runtime `~/Library/Application Support/MeetingNotes/runtime` (marker `"mode": "packaged"`, `setup-state.json`), `meeting-notes setup --only/--json` events.
 7. **Do not move `pipeline/`, `models/` or `.env`:** the installed app and configs point at them.
 8. **Build the app only with `scripts/build-app.sh`** (stable local signing identity keeps mic/screen permissions; it bundles and signs the `MeetingNotesDiarize` helper); bundle id `com.hoangphu.meetingnotes`; ad-hoc signing only when asked. Never quit a recording MeetingNotes: `build-app.sh` and `install.sh` refuse unless `--force`; agents never pass `--force` and never run `make install` / `make install-shared` / `make build-app` end to end without the user (use `scripts/install.sh [--shared] --dry-run`). Never run sudo from scripts (print the command). Releases: `scripts/release.sh` (`build-app.sh --packaged`, never installs) writes the dmg to `build/release/`; tagging, `gh release create` and uploads only on the user's explicit request (`docs/release.md`).
-9. **Never record without a user action.** Meeting detection only offers. The worker is spawned on demand, never at launch or while recording unless the user enabled live transcription (Settings › Recording › Live transcript while recording, default off); heavy ML imports stay lazy.
+9. **Never record without a user action.** Meeting detection only offers. The worker is spawned on demand, never at launch or while recording unless the user enabled live transcription (Settings › Advanced › Show text during the meeting, default off); heavy ML imports stay lazy.
 10. **English for code, comments, docs.** UI copy lives in `L10n.swift` (Vietnamese default, English). Never commit `build/`, `app/.build`, `models/`, `.venv`, recordings.
 
 ## Layout
@@ -23,7 +23,7 @@ app/Sources/
   MeetingNotesCore/      pure logic, unit-tested: Recording/ Meetings/ Worker/ Control/ Preferences/ Presentation/ Setup/ (first-run setup machine, runtime layout)
   MeetingNotesUI/        SwiftUI views + view state: State/ MainWindow/ Pill/ Notes/ Settings/ Shared/
   MeetingNotes/          executable: main.swift AppDelegate.swift Controller/ Presentation/ Capture/ Pipeline/ System/ Diagnostics/ Setup/
-  MeetingNotesPreviews/  offscreen PNG renderer with fake state
+  MeetingNotesPreviews/  offscreen PNG renderer with fake state (pill, main window, Settings)
   MeetingNotesDiarize/   helper CLI: FluidAudio Core ML diarization of one WAV -> JSON (default engine; bundled in Contents/MacOS)
 app/Tests/               Core + UI tests
 pipeline/src/meeting_notes/
