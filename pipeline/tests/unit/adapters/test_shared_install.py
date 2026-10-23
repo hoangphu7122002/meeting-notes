@@ -110,3 +110,19 @@ def test_helper_lookup_includes_the_shared_app(tmp_path, monkeypatch):
     monkeypatch.setattr(fa, "REPO_ROOT", tmp_path)
     write_marker(tmp_path, app=str(tmp_path / "MeetingNotes.app"))
     assert tmp_path / "MeetingNotes.app" / "Contents" / "MacOS" / fa.BINARY in fa.candidates({})
+
+
+def test_doctor_reports_the_packaged_app_runtime(tmp_path, monkeypatch):
+    monkeypatch.setattr(commands, "REPO_ROOT", tmp_path)
+    write_marker(tmp_path, mode="packaged")
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "models" / "huggingface" / "hub"))
+    assert commands.install_mode() == f"packaged app runtime ({tmp_path}); models {tmp_path}/models/huggingface/hub"
+
+
+def test_packaged_runtime_never_reads_a_dot_env_next_to_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(loader, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(loader, "CONFIG_PATH", tmp_path / "cfg" / "config.toml")
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    write_marker(tmp_path, mode="packaged")
+    (tmp_path / ".env").write_text("HF_TOKEN=should-not-be-read\n")
+    assert loader.hf_token() is None

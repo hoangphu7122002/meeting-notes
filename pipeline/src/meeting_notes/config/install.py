@@ -5,6 +5,10 @@ world-readable) and writes `shared-install.json` next to it, so this module find
 mode the Hugging Face cache is the shared store; for accounts that cannot write it, the hub runs offline (reads the
 pre-downloaded files, never tries to lock or download). Everything per user stays per user: config.toml, the
 optional HF token (`~/.config/meeting-notes/.env`), recordings, logs and caches outside the model store.
+
+The packaged app (release dmg) uses the same layout for its per-user runtime: its first-run setup copies the bundled
+pipeline to `~/Library/Application Support/MeetingNotes/runtime/pipeline`, syncs the environment there and writes the
+marker with `"mode": "packaged"` (models in `runtime/models`, writable, so the hub stays online).
 """
 
 from __future__ import annotations

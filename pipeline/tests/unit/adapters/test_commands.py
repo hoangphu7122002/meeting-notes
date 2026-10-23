@@ -1,5 +1,6 @@
 """CLI command handlers: failures keep their exit code and leave a traceback on stderr."""
 
+import json
 from argparse import Namespace
 from types import SimpleNamespace
 
@@ -85,3 +86,29 @@ def test_doctor_reports_the_engine_and_calls_the_hf_token_optional(monkeypatch, 
     out = capsys.readouterr().out
     assert "diarization_engine: fluidaudio" in out and "fluidaudio: helper /x; models cached" in out
     assert "hf_token: missing (optional: only the pyannote fallback uses it)" in out
+
+
+def test_setup_json_runs_only_the_requested_steps(monkeypatch, capsys):
+    monkeypatch.setattr(commands, "hf_token", lambda: None)
+    prepared = []
+    assert cmd_setup(Namespace(only="diarization,summary", json=True), Config(), setup_deps(prepared)) == 0
+    captured = capsys.readouterr()
+    events = [json.loads(line) for line in captured.out.splitlines()]
+    assert all(e["event"] == "setup" for e in events)
+    assert [(e["step"], e["status"]) for e in events if e["status"] != "progress"] == [
+        ("diarization", "start"), ("diarization", "done"), ("summary", "start"), ("summary", "done")]
+    assert {"event": "setup", "step": "summary", "status": "progress", "message": "pulled", "fraction": 1.0} in events
+    assert prepared == ["fluidaudio"] and "Setup complete." not in captured.err
+
+
+def test_setup_json_reports_a_failed_step_and_stops(monkeypatch, capsys):
+    monkeypatch.setattr(commands, "hf_token", lambda: None)
+    assert cmd_setup(Namespace(only="diarization,summary", json=True), Config(), setup_deps([], fail=True)) == 1
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert events[-1] == {"event": "setup", "step": "diarization", "status": "error", "message": "RuntimeError: offline"}
+    assert not any(e["step"] == "summary" for e in events)
+
+
+def test_setup_rejects_unknown_steps(capsys):
+    assert cmd_setup(Namespace(only="whisper", json=True), Config(), setup_deps([])) == 2
+    assert "unknown setup step(s): whisper" in capsys.readouterr().err

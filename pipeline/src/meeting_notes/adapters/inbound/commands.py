@@ -161,32 +161,97 @@ def cmd_doctor(args, cfg: Config, deps: CommandDeps) -> int:
 
 
 def install_mode() -> str:
-    """`doctor` line: dev/per-user install, or the shared install's root and how this account uses its models."""
-    if shared_install(REPO_ROOT) is None:
+    """`doctor` line: dev/per-user install, the packaged app's runtime, or the shared install's root and how this
+    account uses its models."""
+    marker = shared_install(REPO_ROOT)
+    if marker is None:
         return f"per-user ({REPO_ROOT})"
     hub = os.environ.get("HF_HUB_CACHE") or os.environ.get("HF_HOME") or "default"
+    if marker.get("mode") == "packaged":
+        return f"packaged app runtime ({REPO_ROOT}); models {hub}"
     mode = "read-only, offline" if os.environ.get("HF_HUB_OFFLINE") == "1" else "writable"
     return f"shared ({REPO_ROOT}); models {hub} ({mode})"
 
 
+SETUP_STEPS = ("speech", "diarization", "summary")
+
+
+class SetupOutput:
+    """Setup progress: human lines on stderr, or with --json one `{"event":"setup","step","status",...}` line per
+    update on stdout (status start|progress|done|error; optional message, fraction 0-1). The app's first-run
+    wizard reads the JSON form."""
+
+    def __init__(self, json_mode: bool):
+        self.json_mode = json_mode
+
+    def __call__(self, step: str, status: str, message: str = "", fraction: float | None = None) -> None:
+        if self.json_mode:
+            event: dict[str, object] = {"event": "setup", "step": step, "status": status}
+            if message:
+                event["message"] = redact(message)[:300]
+            if fraction is not None:
+                event["fraction"] = round(min(max(fraction, 0.0), 1.0), 4)
+            print(json.dumps(event, ensure_ascii=False), flush=True)
+        elif status == "progress" and fraction is not None:
+            print(f"\r{message} {fraction * 100:5.1f}%", end="", file=sys.stderr)
+        elif status != "error" and message:
+            print(message, file=sys.stderr)
+
+
 def cmd_setup(args, cfg: Config, deps: CommandDeps) -> int:
-    """Download all models ahead of the first meeting."""
-    for repo in (cfg.whisper_model, cfg.embedding_model):
-        print(f"Downloading {repo} ...", file=sys.stderr)
-        deps.download_model(repo)
-    if uses_fluidaudio(cfg) and deps.prepare_fluidaudio:
-        print("Preparing FluidAudio diarization models (~21 MB, no login) ...", file=sys.stderr)
+    """Download all models ahead of the first meeting; `--only` runs some steps (speech = whisper + embeddings,
+    diarization = FluidAudio, summary = Ollama model), `--json` prints machine-readable progress."""
+    only = str(getattr(args, "only", None) or "")
+    steps = [s.strip() for s in only.split(",") if s.strip()] or list(SETUP_STEPS)
+    unknown = [s for s in steps if s not in SETUP_STEPS]
+    if unknown:
+        print(f"unknown setup step(s): {', '.join(unknown)} (choose from {', '.join(SETUP_STEPS)})", file=sys.stderr)
+        return 2
+    out = SetupOutput(bool(getattr(args, "json", False)))
+    for step in steps:
+        out(step, "start")
         try:
-            print(f"FluidAudio ready: {deps.prepare_fluidaudio(cfg, lambda m: print(m, file=sys.stderr))}", file=sys.stderr)
-        except Exception as exc:  # setup goes on: diarization then falls back to pyannote / clustering
+            SETUP_RUNNERS[step](cfg, deps, out)
+        except Exception as exc:
+            if not out.json_mode:
+                raise
+            out(step, "error", " ".join(f"{type(exc).__name__}: {exc}".split()))
+            return 1
+        out(step, "done")
+    if not out.json_mode:
+        print("\nSetup complete.", file=sys.stderr)
+    return 0
+
+
+def _setup_speech(cfg: Config, deps: CommandDeps, out: SetupOutput) -> None:
+    for repo in (cfg.whisper_model, cfg.embedding_model):
+        out("speech", "progress", f"Downloading {repo} ...")
+        deps.download_model(repo)
+
+
+def _setup_diarization(cfg: Config, deps: CommandDeps, out: SetupOutput) -> None:
+    if uses_fluidaudio(cfg) and deps.prepare_fluidaudio:
+        out("diarization", "progress", "Preparing FluidAudio diarization models (~21 MB, no login) ...")
+        try:
+            path = deps.prepare_fluidaudio(cfg, lambda m: out("diarization", "progress", m))
+            out("diarization", "progress", f"FluidAudio ready: {path}")
+        except Exception as exc:  # full setup goes on: diarization then falls back to pyannote / clustering
+            if out.json_mode:
+                raise
             print(f"FluidAudio not ready ({redact(str(exc))[:200]}); diarization will fall back to pyannote", file=sys.stderr)
     access = deps.check_hf_access(cfg.diarization_models) if hf_token() else {}
     for model, state in access.items():
-        print(f"{model}: {state}", file=sys.stderr)
+        out("diarization", "progress", f"{model}: {state}")
         if state == "ok":
             deps.warm_diarizer(cfg)
             break
-    print(f"Ensuring Ollama model {cfg.ollama_model} ...", file=sys.stderr)
-    deps.make_llm(cfg).ensure_model(lambda f, msg: print(f"\r{msg} {f * 100:5.1f}%", end="", file=sys.stderr))
-    print("\nSetup complete.", file=sys.stderr)
-    return 0
+
+
+def _setup_summary(cfg: Config, deps: CommandDeps, out: SetupOutput) -> None:
+    out("summary", "progress", f"Ensuring Ollama model {cfg.ollama_model} ...")
+    deps.make_llm(cfg).ensure_model(lambda f, msg: out("summary", "progress", msg, f))
+
+
+SETUP_RUNNERS: dict[str, Callable[[Config, CommandDeps, SetupOutput], None]] = {
+    "speech": _setup_speech, "diarization": _setup_diarization, "summary": _setup_summary,
+}

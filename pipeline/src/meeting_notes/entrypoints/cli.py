@@ -50,7 +50,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--offline", action="store_true", help="skip Hugging Face access checks")
     p.set_defaults(func=cmd_doctor)
 
-    p = sub.add_parser("setup", help="download whisper, embedding and Ollama models")
+    p = sub.add_parser("setup", help="download whisper, embedding, FluidAudio and Ollama models")
+    p.add_argument("--only", metavar="STEPS", help="comma list of speech,diarization,summary (default: all)")
+    p.add_argument("--json", action="store_true", help="JSON progress lines on stdout (used by the app's setup)")
     p.set_defaults(func=cmd_setup)
 
     p = sub.add_parser("worker", help="long-lived worker for the app (JSON commands on stdin)")
