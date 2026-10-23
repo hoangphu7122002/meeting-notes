@@ -40,6 +40,25 @@ if [ -n "$hits" ]; then
   echo "ERROR: only MeetingNotesDiarize may import FluidAudio:"; echo "$hits"; fail=1
 fi
 
+# Caption kit: Foundation only (shared by the app and the caption helper).
+hits=$(grep -rnE '^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]+' "$SRC/MeetingNotesCaptionKit" --include='*.swift' \
+  | grep -vE 'import[[:space:]]+Foundation[[:space:]]*$' || true)
+if [ -n "$hits" ]; then
+  echo "ERROR: MeetingNotesCaptionKit may import only Foundation:"; echo "$hits"; fail=1
+fi
+
+# Caption helper: allowlist only; nothing else may import WhisperKit (it stays out of the app process).
+hits=$(grep -rnE '^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]+' "$SRC/MeetingNotesCaptions" --include='*.swift' \
+  | grep -vE 'import[[:space:]]+(Foundation|CoreML|MeetingNotesCaptionKit|WhisperKit)[[:space:]]*$' || true)
+if [ -n "$hits" ]; then
+  echo "ERROR: MeetingNotesCaptions may import only Foundation/CoreML/MeetingNotesCaptionKit/WhisperKit:"; echo "$hits"; fail=1
+fi
+hits=$(grep -rnE '^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]+WhisperKit\b' "$SRC" --include='*.swift' \
+  | grep -v "^$SRC/MeetingNotesCaptions/" || true)
+if [ -n "$hits" ]; then
+  echo "ERROR: only MeetingNotesCaptions may import WhisperKit:"; echo "$hits"; fail=1
+fi
+
 # Launch rules: Foundation only (the launcher agent links nothing heavier).
 hits=$(grep -rnE '^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]+' "$SRC/MeetingNotesLaunch" --include='*.swift' \
   | grep -vE 'import[[:space:]]+Foundation[[:space:]]*$' || true)

@@ -7,6 +7,8 @@ let package = Package(
     dependencies: [
         // Core ML speaker diarization for the MeetingNotesDiarize helper only (default engine, Apache-2.0).
         .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.17.7"),
+        // Live captions (design B) for the MeetingNotesCaptions helper only: Whisper Core ML on the Neural Engine (MIT).
+        .package(url: "https://github.com/argmaxinc/WhisperKit.git", exact: "1.1.1"),
     ],
     targets: [
         // Meeting-app list and the "open the app when a meeting starts" rules (Foundation only): shared by the app
@@ -15,9 +17,16 @@ let package = Package(
             name: "MeetingNotesLaunch",
             path: "Sources/MeetingNotesLaunch"
         ),
+        // Live captions (Foundation only): helper wire protocol, streaming window policy, energy gate, text cleanup.
+        // Shared by the MeetingNotesCaptions helper and the app (through Core); unit-tested without WhisperKit.
+        .target(
+            name: "MeetingNotesCaptionKit",
+            path: "Sources/MeetingNotesCaptionKit"
+        ),
         // Pure logic (state machines, clock, WAV writing, event parsing, localization, layout); unit-tested.
         .target(
             name: "MeetingNotesCore",
+            dependencies: ["MeetingNotesCaptionKit"],
             path: "Sources/MeetingNotesCore",
             linkerSettings: [
                 .linkedFramework("Accelerate"),
@@ -35,7 +44,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "MeetingNotes",
-            dependencies: ["MeetingNotesCore", "MeetingNotesUI", "MeetingNotesLaunch"],
+            dependencies: ["MeetingNotesCore", "MeetingNotesUI", "MeetingNotesLaunch", "MeetingNotesCaptionKit"],
             path: "Sources/MeetingNotes",
             linkerSettings: [
                 .linkedFramework("ScreenCaptureKit"),
@@ -61,6 +70,14 @@ let package = Package(
             dependencies: [.product(name: "FluidAudio", package: "FluidAudio")],
             path: "Sources/MeetingNotesDiarize"
         ),
+        // `MeetingNotesCaptions`: live caption helper (design B). The app streams 16 kHz PCM of the recording on stdin
+        // and reads caption JSON lines; WhisperKit runs on the Neural Engine in this separate process, so its memory
+        // and crashes never touch the app. scripts/build-app.sh copies it into Contents/MacOS.
+        .executableTarget(
+            name: "MeetingNotesCaptions",
+            dependencies: ["MeetingNotesCaptionKit", .product(name: "WhisperKit", package: "WhisperKit")],
+            path: "Sources/MeetingNotesCaptions"
+        ),
         // `MeetingNotesLauncher`: per-user background agent (SMAppService.agent) that opens the app when a meeting
         // starts while it is not running. scripts/build-app.sh copies it into Contents/MacOS with its launchd plist.
         .executableTarget(
@@ -71,7 +88,7 @@ let package = Package(
         ),
         .testTarget(
             name: "MeetingNotesCoreTests",
-            dependencies: ["MeetingNotesCore", "MeetingNotesLaunch"],
+            dependencies: ["MeetingNotesCore", "MeetingNotesLaunch", "MeetingNotesCaptionKit"],
             path: "Tests/MeetingNotesCoreTests"
         ),
         .testTarget(
