@@ -7,24 +7,25 @@ Local-only macOS meeting recorder. It records your mic and the other participant
 
 ## Requirements
 
-macOS 14+ (15 recommended), Apple Silicon, Homebrew, Xcode Command Line Tools (`xcode-select --install`).
+macOS 14+ (15 recommended), Apple Silicon, Xcode Command Line Tools (`xcode-select --install`). No Hugging Face account.
 
 ## Install and build
 
 ```sh
 cd ~/meeting-notes
-make install      # brew ffmpeg + ollama, uv sync, model downloads, build and install the app
-make build-app    # rebuild only the app; quits the running MeetingNotes first
-uv run --project pipeline meeting-notes doctor   # check ffmpeg, Ollama, models, HF access
+make install      # one pass, safe to re-run: Homebrew/uv/ffmpeg/Ollama if missing, uv sync, models, app
+make install ARGS=--dry-run   # print the plan and commands, change nothing
+make build-app    # rebuild only the app; quits an idle MeetingNotes first (never one that records, unless --force)
+uv run --project pipeline meeting-notes doctor   # check ffmpeg, Ollama, models, diarization helper
 ```
 
 The app is signed with a stable local certificate (`scripts/setup-signing.sh`), so Microphone and Screen & System Audio permissions survive rebuilds. Build only via `make build-app` / `scripts/build-app.sh`.
 
-### Speaker diarization (optional)
+### Speaker diarization
 
-- **pyannote** (default): needs `HF_TOKEN` in the gitignored root `.env` and acceptance of the model terms on Hugging Face (`pyannote/speaker-diarization-community-1`; for the 3.1 fallback also `speaker-diarization-3.1` and `segmentation-3.0`). `doctor` should report `diarization_access: ok`.
-- **No token needed:** the pipeline falls back to voice clustering, then to Me / Others (mic = Me, system = Others). Diarization never fails the run. The method used is saved in `transcript.json` (`diarization.methods`).
-- **Experimental engines:** `diarization_engine = "sherpa-onnx"` (`cd pipeline && uv sync --extra sherpa`) or `"fluidaudio"` (`cd app && swift build -c release --product MeetingNotesDiarize`). Weights download on first use; the app bundle does not ship FluidAudio. Details: [diarization-alternatives](docs/research/diarization-alternatives.md).
+- **FluidAudio** (default, no token): [FluidAudio](https://github.com/FluidInference/FluidAudio)'s Core ML port of pyannote community-1 on the Neural Engine, via the `MeetingNotesDiarize` helper bundled in the app. Its ~21 MB of weights (CC-BY-4.0: pyannote, WeSpeaker, BUT Speech@FIT, converted by Fluid Inference) download on first use (`make install` prefetches them).
+- **Fallback:** if the helper is missing or fails, pyannote runs (needs `HF_TOKEN` in the gitignored root `.env` and accepted terms for `pyannote/speaker-diarization-community-1`), else voice clustering, then Me / Others. Diarization never fails the run. The engine used is saved in `transcript.json` (`diarization.engine`, `diarization.methods`).
+- **Other engines:** `diarization_engine = "pyannote"` or `"sherpa-onnx"` (`cd pipeline && uv sync --extra sherpa`). Details: [diarization-alternatives](docs/research/diarization-alternatives.md).
 
 ## First run
 
@@ -60,7 +61,7 @@ Optional `~/.config/meeting-notes/config.toml` (or `MEETING_NOTES_CONFIG`). All 
 | `ollama_model` | `qwen3:4b` | Summary model (`qwen3:8b` is better, ~2x RAM) |
 | `languages` | `["vi", "en"]` | Allowed languages (`[]` = any) |
 | `initial_prompt` | `""` | Vocabulary hint for names and terms |
-| `diarization_engine` | `"pyannote"` | `pyannote` \| `sherpa-onnx` \| `fluidaudio` |
+| `diarization_engine` | `"fluidaudio"` | `fluidaudio` \| `pyannote` \| `sherpa-onnx` |
 | `mic_voice_check` | `true` | Skip full mic diarization when the mic holds only your voice |
 | `keep_models_warm` | `"auto"` | Keep models loaded between stages only under normal memory pressure (`false` / `true` also accepted) |
 | `live_polish` | `"off"` | `"rules"` = display-only cleanup of the live transcript |
