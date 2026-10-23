@@ -29,10 +29,11 @@ final class WorkerClient {
     /// Running and not announced idle exit.
     var isAvailable: Bool { process?.isRunning == true && !exiting }
 
-    /// Spawns the worker unless one with the same priority/model is already running.
-    func ensureRunning(priority: String, model: String) throws {
-        let key = "\(priority)|\(model)"
-        if isAvailable, environmentKey == key { return }
+    /// Spawns the worker unless a reusable one is already running (same priority/model; an explicit job
+    /// accepts any priority so warm models survive, see `WorkerReuse`).
+    func ensureRunning(priority: String, model: String, explicit: Bool = false) throws {
+        let key = WorkerReuse.key(priority: priority, model: model)
+        if isAvailable, WorkerReuse.canReuse(runningKey: environmentKey, priority: priority, model: model, explicit: explicit) { return }
         if process != nil { shutdown() }
         try spawn(priority: priority, model: model)
         environmentKey = key

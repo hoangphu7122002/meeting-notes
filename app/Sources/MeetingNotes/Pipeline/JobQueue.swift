@@ -155,7 +155,7 @@ final class JobQueue {
         lastError = nil
         sawJobEvent = false
         do {
-            try worker.ensureRunning(priority: priority, model: Settings.summaryModel.model)
+            try worker.ensureRunning(priority: priority, model: Settings.summaryModel.model, explicit: job.explicit)
             worker.setLogFile(job.folder.appendingPathComponent("pipeline.app.log"),
                               header: "\n=== \(Date()) meeting-notes worker job \(job.id)\(job.from.map { " from \($0)" } ?? "") ===\n")
             try worker.send(WorkerEvent.Command.process(job: job.id, folder: job.folder.path, from: job.from))

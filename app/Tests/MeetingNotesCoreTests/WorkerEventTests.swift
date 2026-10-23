@@ -183,3 +183,19 @@ struct NotesDocumentTests {
         #expect(summary.plainText(.en).contains("Open questions\n- Why?"))
     }
 }
+
+@Suite("Worker reuse")
+struct WorkerReuseTests {
+    @Test func sameEnvironmentIsReused() {
+        let running = WorkerReuse.key(priority: "low", model: "qwen3:4b")
+        #expect(WorkerReuse.canReuse(runningKey: running, priority: "low", model: "qwen3:4b", explicit: false))
+        #expect(!WorkerReuse.canReuse(runningKey: nil, priority: "low", model: "qwen3:4b", explicit: true))
+    }
+
+    @Test func explicitJobTakesAnyPriorityButNotAnotherModel() {
+        let running = WorkerReuse.key(priority: "normal", model: "qwen3:4b")
+        #expect(!WorkerReuse.canReuse(runningKey: running, priority: "low", model: "qwen3:4b", explicit: false))
+        #expect(WorkerReuse.canReuse(runningKey: running, priority: "low", model: "qwen3:4b", explicit: true))
+        #expect(!WorkerReuse.canReuse(runningKey: running, priority: "low", model: "qwen3:8b", explicit: true))
+    }
+}
