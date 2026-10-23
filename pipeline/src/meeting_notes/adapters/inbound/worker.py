@@ -1,8 +1,10 @@
 """Long-lived pipeline worker used by the app.
 
-Avoids re-importing torch/MLX for each queued meeting. By default models are unloaded after each
-stage (keep_models_warm=False) and the worker exits after `worker_idle_release_min` idle minutes,
-so nothing stays resident while you work.
+Avoids re-importing torch/MLX for each queued meeting. With keep_models_warm = "auto" (default) models stay
+loaded between stages and queued jobs only while memory pressure is "normal"; on "warn" or worse they are
+released (at stage boundaries, and every IDLE_POLL_SEC while idle, announced as status "released" with
+"reason": "memory"). The worker exits after `worker_idle_release_min` idle minutes, so nothing stays resident
+while you work.
 
 Protocol: one JSON object per line.
   stdin  {"cmd": "warmup"} | {"cmd": "process", "job": "<id>", "folder": "...", "from": null, "force": false}
@@ -35,6 +37,9 @@ from ...config import Config, redact
 
 if TYPE_CHECKING:
     from ...application.ports import ManagedModels, ProgressReporter
+
+
+IDLE_POLL_SEC = 5.0  # idle loop tick: memory-pressure release and idle exit
 
 
 class Worker:
@@ -111,10 +116,11 @@ class Worker:
         self.send({"event": "worker", "status": "ready", "pid": os.getpid(), "features": ["live", "live_polish"] if self.make_live else []})
         while True:
             try:
-                cmd = self.commands.get(timeout=15)
+                cmd = self.commands.get(timeout=IDLE_POLL_SEC)
             except queue.Empty:
                 if self._idle_exit():
                     return 0
+                self._release_on_pressure()
                 continue
             name = cmd.get("cmd")
             if name == "quit":
@@ -140,6 +146,11 @@ class Worker:
         self.models.release()
         self.send({"event": "worker", "status": "exit", "idle_min": round(idle_min, 1)})
         return True
+
+    def _release_on_pressure(self) -> None:
+        """Between jobs: drop warm models as soon as memory pressure leaves "normal" (RAM safety beats speed)."""
+        if self.models.release_if_pressure():
+            self.send({"event": "worker", "status": "released", "reason": "memory"})
 
     def _warmup(self) -> None:
         self.cfg = self.load_config()
@@ -177,6 +188,7 @@ class Worker:
             self._finish_job()
             self.models.last_used = time.monotonic()
         self.send({"event": "job_end", "job": job, "exit": code})
+        self._release_on_pressure()
 
     def _live(self, cmd: dict) -> None:
         """Live transcription of a meeting being recorded, until live_stop."""

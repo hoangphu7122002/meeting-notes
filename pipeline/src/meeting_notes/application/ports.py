@@ -63,11 +63,13 @@ class ModelProvider(Protocol):
 class ManagedModels(ModelProvider, Protocol):
     """A ModelProvider a long-lived worker also warms, reconfigures and releases."""
 
-    keep: bool
+    keep: bool | str
     last_used: float
 
     @property
     def loaded(self) -> bool: ...
+
+    def release_if_pressure(self) -> bool: ...
 
     def update_config(self, cfg) -> None: ...
 

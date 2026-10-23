@@ -71,9 +71,12 @@ class Config:
     priority: str = "low"
     cpu_threads: int = 4  # torch / BLAS / OpenMP threads
     diarization_batch_size: int = 8  # pyannote batch size: smaller = shorter GPU bursts
-    # Worker (used by the app). keep_models_warm=False unloads whisper/pyannote right after each stage
-    # (lowest RAM); True keeps them between meetings until worker_idle_release_min.
-    keep_models_warm: bool = False
+    # Worker (used by the app). keep_models_warm: "auto" (default) keeps whisper/pyannote between stages and
+    # queued jobs only while memory pressure is "normal" and releases them on "warn" or worse (checked at each
+    # stage and every few seconds while idle; at most one heavy model is held under pressure); False unloads each
+    # right after its stage (lowest RAM); True keeps them unless pressure is critical. The worker frees everything
+    # and exits after worker_idle_release_min idle minutes either way.
+    keep_models_warm: bool | str = "auto"
     worker_idle_release_min: float = 1.0
     # Live transcription while recording (opt-in in the app: Settings > Recording > Live transcript while recording). Chunks are cut at
     # pauses >= live_pause_sec, between live_min_chunk_sec and live_max_chunk_sec long; undecoded audio beyond

@@ -102,6 +102,10 @@ class Diarizer:
     def release(self) -> None:
         self._pipeline = None
         self._embedder = None
+        self.trim()
+
+    def trim(self) -> None:
+        """gc + empty the MPS cache; keeps loaded weights (release() drops them first)."""
         try:
             import gc
 

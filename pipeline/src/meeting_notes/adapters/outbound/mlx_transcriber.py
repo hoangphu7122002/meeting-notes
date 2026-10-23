@@ -126,6 +126,18 @@ class Transcriber:
             self.encodes += proxy.encodes
         return result.get("segments", [])
 
+    def trim(self) -> None:
+        """Keep the weights, give MLX's freed-buffer cache back (between stages when the model stays warm)."""
+        try:
+            import gc
+
+            import mlx.core as mx
+
+            gc.collect()
+            mx.clear_cache()
+        except Exception:
+            pass
+
     def release(self) -> None:
         try:
             import gc

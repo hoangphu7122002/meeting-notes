@@ -1,4 +1,9 @@
-"""Model cache shared across jobs, so a long-lived worker keeps whisper and pyannote warm (ModelProvider)."""
+"""Model cache shared across jobs, so a long-lived worker keeps whisper and pyannote warm (ModelProvider).
+
+`keep` follows `keep_models_warm` (domain/warm_policy.py): "auto" holds a model after its stage and between jobs
+only while memory pressure is "normal"; under "warn" or worse it is released, and before loading the other heavy
+model the idle one is dropped, so at most one is resident. A kept model still drops its freed-buffer cache.
+"""
 
 from __future__ import annotations
 
@@ -8,15 +13,20 @@ from collections.abc import Callable
 import numpy as np
 
 from ...config import Config
+from ...domain.warm_policy import OFF, keep_warm, warm_mode
 
 
 class Models:
-    """Holds the diarizer and transcriber. `keep=False` (one-shot CLI) frees each after use."""
+    """Holds the diarizer and transcriber. `keep=False` (one-shot CLI) frees each after use; "auto" / True keep
+    them per the warm policy. `pressure` returns kern.memorystatus_vm_pressure_level (tests inject it)."""
 
-    def __init__(self, cfg: Config, keep: bool = False, log: Callable[[str], None] = print):
+    def __init__(self, cfg: Config, keep: bool | str = False, log: Callable[[str], None] = print,
+                 pressure: Callable[[], int] | None = None):
         self.cfg = cfg
         self.keep = keep
+        self.mode = warm_mode(keep)
         self.log = log
+        self._pressure = pressure
         self._diarizer = None
         self._transcriber = None
         self.last_used = time.monotonic()
@@ -33,9 +43,33 @@ class Models:
     def loaded(self) -> bool:
         return self._diarizer is not None or self._transcriber is not None
 
+    def pressure(self) -> int:
+        if self._pressure is None:
+            from .load_probe import memory_pressure_level
+
+            self._pressure = memory_pressure_level
+        try:
+            return int(self._pressure())
+        except Exception:
+            return 0  # unknown: "auto" treats it as not normal
+
+    def keep_now(self) -> bool:
+        """Whether a loaded model may stay resident right now."""
+        return self.mode != OFF and keep_warm(self.mode, self.pressure())
+
+    def release_if_pressure(self) -> bool:
+        """Release every loaded model when the policy no longer allows holding them; True if something was freed."""
+        if not self.loaded or self.keep_now():
+            return False
+        self.release()
+        self.log("released models (memory pressure)")
+        return True
+
     def diarizer(self):
         from .pyannote_diarizer import Diarizer
 
+        if self._transcriber is not None and not self.keep_now():
+            self._drop_transcriber()  # one heavy model at a time unless memory is plentiful
         if self._diarizer is None:
             self._diarizer = Diarizer(self.cfg, log=self.log)
         self._diarizer.cfg = self.cfg
@@ -45,6 +79,8 @@ class Models:
     def transcriber(self):
         from .mlx_transcriber import Transcriber
 
+        if self._diarizer is not None and not self.keep_now():
+            self._drop_diarizer()
         if self._transcriber is None:
             self._transcriber = Transcriber(self.cfg)
         self._transcriber.cfg = self.cfg
@@ -52,12 +88,28 @@ class Models:
         return self._transcriber
 
     def done_with_diarizer(self) -> None:
-        if not self.keep and self._diarizer is not None:
+        if self._diarizer is None:
+            return
+        if self.keep_now():
+            _trim(self._diarizer)
+        else:
+            self._drop_diarizer()
+
+    def done_with_transcriber(self) -> None:
+        if self._transcriber is None:
+            return
+        if self.keep_now():
+            _trim(self._transcriber)
+        else:
+            self._drop_transcriber()
+
+    def _drop_diarizer(self) -> None:
+        if self._diarizer is not None:
             self._diarizer.release()
             self._diarizer = None
 
-    def done_with_transcriber(self) -> None:
-        if not self.keep and self._transcriber is not None:
+    def _drop_transcriber(self) -> None:
+        if self._transcriber is not None:
             self._transcriber.release()
             self._transcriber = None
 
@@ -84,8 +136,15 @@ class Models:
         return timings
 
     def release(self) -> None:
-        if self._diarizer is not None:
-            self._diarizer.release()
-        if self._transcriber is not None:
-            self._transcriber.release()
-        self._diarizer = self._transcriber = None
+        self._drop_diarizer()
+        self._drop_transcriber()
+
+
+def _trim(model) -> None:
+    """Drop a kept model's freed-buffer cache (gc + MLX/MPS cache clear) without unloading its weights."""
+    trim = getattr(model, "trim", None)
+    if trim is not None:
+        try:
+            trim()
+        except Exception:
+            pass

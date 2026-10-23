@@ -57,7 +57,8 @@ summary_language = "auto"
 priority = "low"            # low (nice + utility QoS) | background (gentlest, ~3x slower) | normal
 cpu_threads = 4
 diarization_batch_size = 8
-keep_models_warm = false    # true: keep whisper/pyannote loaded between queued meetings
+keep_models_warm = "auto"   # keep whisper/pyannote between stages and queued meetings only under "normal" memory
+                            # pressure, release on "warn"; false: unload after each stage; true: keep unless critical
 worker_idle_release_min = 1.0
 
 # Live transcript while recording (off by default; enable in the app: Settings > Recording > Live transcript while recording).

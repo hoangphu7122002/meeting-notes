@@ -7,10 +7,13 @@ from meeting_notes.adapters.outbound.progress_reporter import Reporter
 from meeting_notes.application.process_meeting import Processor
 
 
-def make_worker(monkeypatch, deps=None):
+WARN = 2  # memory pressure injected into Models: deterministic regardless of the test machine
+
+
+def make_worker(monkeypatch, deps=None, pressure=lambda: WARN):
     out = io.StringIO()
     monkeypatch.setattr("sys.stdout", out)
-    w = Worker(make_models=lambda cfg, keep, log: Models(cfg, keep=keep, log=log), make_reporter=Reporter,
+    w = Worker(make_models=lambda cfg, keep, log: Models(cfg, keep=keep, log=log, pressure=pressure), make_reporter=Reporter,
                make_processor=lambda folder, cfg, reporter, models: Processor(folder, cfg, reporter, deps, models))
     return w, out
 
@@ -26,7 +29,20 @@ def test_worker_process_job(meeting, stubs, deps, monkeypatch):
     assert all(e.get("job") == "j1" for e in ev)
     assert ev[-1] == {"event": "job_end", "job": "j1", "exit": 0}
     assert any(e["event"] == "done" for e in ev)
-    assert w.models.keep is False and not w.models.loaded  # models unloaded after each stage by default
+    assert w.models.mode == "auto" and not w.models.loaded  # under "warn" models are unloaded after each stage
+
+
+def test_worker_keeps_models_warm_under_normal_pressure_and_releases_on_warn(meeting, stubs, deps, monkeypatch):
+    level = {"now": 1}
+    w, out = make_worker(monkeypatch, deps, pressure=lambda: level["now"])
+    w._process({"cmd": "process", "job": "j1", "folder": str(meeting)})
+    assert w.models.loaded and events(out)[-1]["event"] == "job_end"  # warm for the next queued job
+    w._release_on_pressure()
+    assert w.models.loaded  # still normal: nothing to do
+    level["now"] = 2
+    w._release_on_pressure()
+    assert not w.models.loaded
+    assert events(out)[-1] == {"event": "worker", "status": "released", "reason": "memory"}
 
 
 def test_worker_bad_folder(monkeypatch, tmp_path):
@@ -96,7 +112,7 @@ class FakeLive:
 def make_live_worker(monkeypatch, deps=None):
     out = io.StringIO()
     monkeypatch.setattr("sys.stdout", out)
-    w = Worker(make_models=lambda cfg, keep, log: Models(cfg, keep=keep, log=log), make_reporter=Reporter,
+    w = Worker(make_models=lambda cfg, keep, log: Models(cfg, keep=keep, log=log, pressure=lambda: WARN), make_reporter=Reporter,
                make_processor=lambda folder, cfg, reporter, models: Processor(folder, cfg, reporter, deps, models),
                make_live=FakeLive)
     return w, out
