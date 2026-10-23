@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 import traceback
@@ -12,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ...application.errors import Cancelled, OllamaError
-from ...config import CONFIG_PATH, Config, hf_token, redact
+from ...config import CONFIG_PATH, REPO_ROOT, Config, hf_token, redact, shared_install
 from ...domain.glossary import glossary_entries
 from ...domain.notes_schema import template_name
 
@@ -124,6 +125,7 @@ def cmd_import(args, cfg: Config, deps: CommandDeps) -> int:
 def cmd_doctor(args, cfg: Config, deps: CommandDeps) -> int:
     report: dict[str, object] = {"config_file": str(CONFIG_PATH) + ("" if CONFIG_PATH.exists() else " (not present, using defaults)")}
     report["notes_dir"] = str(cfg.notes_path)
+    report["install"] = install_mode()
     report["ffmpeg"] = deps.find_ffmpeg()
     report["diarization_engine"] = cfg.diarization_engine
     if uses_fluidaudio(cfg) and deps.fluidaudio_status:
@@ -156,6 +158,15 @@ def cmd_doctor(args, cfg: Config, deps: CommandDeps) -> int:
         else:
             print(f"{key}: {value}")
     return 0
+
+
+def install_mode() -> str:
+    """`doctor` line: dev/per-user install, or the shared install's root and how this account uses its models."""
+    if shared_install(REPO_ROOT) is None:
+        return f"per-user ({REPO_ROOT})"
+    hub = os.environ.get("HF_HUB_CACHE") or os.environ.get("HF_HOME") or "default"
+    mode = "read-only, offline" if os.environ.get("HF_HUB_OFFLINE") == "1" else "writable"
+    return f"shared ({REPO_ROOT}); models {hub} ({mode})"
 
 
 def cmd_setup(args, cfg: Config, deps: CommandDeps) -> int:

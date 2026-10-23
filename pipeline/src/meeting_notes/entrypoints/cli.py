@@ -10,6 +10,10 @@ os.environ.setdefault("PYANNOTE_METRICS_ENABLED", "false")
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
+from ..config import REPO_ROOT, apply_shared_env  # noqa: E402
+
+apply_shared_env(REPO_ROOT)  # shared install: HF cache = shared model store (offline if not writable); before any HF import
+
 from ..adapters.inbound.commands import (  # noqa: E402
     CTL_COMMANDS, cmd_ctl, cmd_doctor, cmd_import, cmd_live, cmd_process, cmd_setup, cmd_worker,
 )

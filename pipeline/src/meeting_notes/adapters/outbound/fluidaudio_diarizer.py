@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ...config import REPO_ROOT, Config
+from ...config import REPO_ROOT, Config, shared_install
 from ...domain.intervals import Interval
 from ...domain.signal import SR, energy_vad
 from ...domain.speakers import RawTurns, TrackDiarization
@@ -42,11 +42,12 @@ Runner = Callable[..., str]  # (argv, timeout seconds, on_line=None) -> stdout; 
 
 
 def candidates(env: dict[str, str] | None = None) -> list[Path]:
-    """Auto-discovery order: the app's bundled helper (env from the app, then installed bundles), then the repo's
-    release and debug builds."""
+    """Auto-discovery order: the app's bundled helper (env from the app, then installed bundles, incl. a shared
+    install's app), then the repo's release and debug builds."""
     env = os.environ if env is None else env
     found = [Path(env[APP_ENV]).expanduser()] if env.get(APP_ENV, "").strip() else []
-    found += [Path(app).expanduser() / "Contents" / "MacOS" / BINARY for app in APP_BUNDLES]
+    apps = [*APP_BUNDLES, *([marker["app"]] if (marker := shared_install(REPO_ROOT)) and marker.get("app") else [])]
+    found += [Path(app).expanduser() / "Contents" / "MacOS" / BINARY for app in apps]
     found += [REPO_ROOT / "app" / ".build" / kind / BINARY for kind in ("release", "debug")]
     return found
 
