@@ -15,6 +15,7 @@ public enum WorkerEvent: Equatable, Sendable {
     case pong(busy: Bool)
     case liveSegment(job: String?, LiveSegment)
     case liveStatus(job: String?, LiveStatus)
+    case livePolish(job: String?, LivePolish)
     case other(String)
 
     public init?(line: String) {
@@ -61,6 +62,9 @@ public enum WorkerEvent: Equatable, Sendable {
         case "live_status":
             guard let status = LiveStatus(object: object) else { return nil }
             self = .liveStatus(job: job, status)
+        case "live_polish":
+            guard let polish = LivePolish(object: object) else { return nil }
+            self = .livePolish(job: job, polish)
         default:
             self = .other(kind)
         }
@@ -70,7 +74,7 @@ public enum WorkerEvent: Equatable, Sendable {
         switch self {
         case .stage(let job, _, _, _, _, _, _), .progress(let job, _, _, _, _, _), .warning(let job, _), .error(let job, _),
              .partial(let job, _, _), .cancelled(let job, _), .done(let job, _, _, _, _), .jobEnd(let job, _),
-             .liveSegment(let job, _), .liveStatus(let job, _):
+             .liveSegment(let job, _), .liveStatus(let job, _), .livePolish(let job, _):
             return job
         case .worker, .pong, .other:
             return nil
@@ -86,8 +90,17 @@ public enum WorkerEvent: Equatable, Sendable {
         }
 
         /// Starts the live transcript of a recording folder (only if the worker's `ready` listed "live").
-        public static func live(job: String, folder: String) -> String {
-            line(["cmd": "live", "job": job, "folder": folder])
+        /// `polish` ("rules") is added only when given; see `livePolishMode`.
+        public static func live(job: String, folder: String, polish: String? = nil) -> String {
+            var object: [String: Any] = ["cmd": "live", "job": job, "folder": folder]
+            if let polish { object["polish"] = polish }
+            return line(object)
+        }
+
+        /// The `polish` value for the `live` command: "rules" when the user enabled it and the worker advertises
+        /// the "live_polish" feature, else nil (key omitted, so older workers never see it).
+        public static func livePolishMode(enabled: Bool, features: [String]?) -> String? {
+            enabled && features?.contains("live_polish") == true ? "rules" : nil
         }
 
         /// Asks the live job to finish its current chunk and end.
@@ -227,7 +240,7 @@ public struct ProcessingSnapshot: Equatable, Sendable {
             }
         case let .cancelled(_, folder):
             if let folder { self.folder = folder }
-        case .jobEnd, .worker, .pong, .liveSegment, .liveStatus, .other:
+        case .jobEnd, .worker, .pong, .liveSegment, .liveStatus, .livePolish, .other:
             break
         }
         return self != before

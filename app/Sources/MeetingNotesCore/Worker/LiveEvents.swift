@@ -66,3 +66,34 @@ public struct LiveStatus: Equatable, Sendable {
                   reason: object["reason"] as? String)
     }
 }
+
+/// Display-only polished text of one live paragraph (`{"event":"live_polish",...}`), sent only when the `live`
+/// command asked for polish. A later event with the same (track, para) replaces the earlier text; `seqs` are the
+/// raw `live_segment` chunks of that track the paragraph covers. Raw segments are always kept.
+public struct LivePolish: Equatable, Sendable {
+    public let track: String
+    public let speaker: String
+    public let para: Int
+    public let seqs: [Int]
+    /// "rules" (Tier 1).
+    public let tier: String
+    public let text: String
+
+    public init(track: String, speaker: String, para: Int, seqs: [Int], tier: String = "rules", text: String) {
+        self.track = track
+        self.speaker = speaker
+        self.para = para
+        self.seqs = seqs
+        self.tier = tier
+        self.text = text
+    }
+
+    public var isMe: Bool { track == "mic" }
+
+    init?(object: [String: Any]) {
+        guard let track = object["track"] as? String, let para = (object["para"] as? NSNumber)?.intValue else { return nil }
+        let seqs = ((object["seqs"] as? [Any]) ?? []).compactMap { ($0 as? NSNumber)?.intValue }
+        self.init(track: track, speaker: (object["speaker"] as? String) ?? (track == "mic" ? "Me" : "Others"), para: para,
+                  seqs: seqs, tier: (object["tier"] as? String) ?? "rules", text: (object["text"] as? String) ?? "")
+    }
+}

@@ -7,6 +7,8 @@ public struct LiveTranscript: Equatable, Sendable {
     /// Ordered by start time (then track, seq).
     public private(set) var segments: [LiveSegment] = []
     public private(set) var status: LiveStatus?
+    /// Display-only polished paragraphs keyed by "track-para" (only when polish was requested). Raw segments stay.
+    public private(set) var polished: [String: LivePolish] = [:]
 
     public init(job: String) {
         self.job = job
@@ -25,6 +27,33 @@ public struct LiveTranscript: Equatable, Sendable {
     public func lastLines(_ count: Int) -> [LiveSegment] {
         guard count > 0 else { return [] }
         return Array(lines.suffix(count))
+    }
+
+    /// At least one polished paragraph arrived (the pill then offers a raw/polished toggle).
+    public var hasPolish: Bool { !polished.isEmpty }
+
+    /// The last `count` non-empty lines to show. `polished`: polished paragraphs replace the raw chunks they cover;
+    /// chunks no paragraph covers yet are shown raw. Oldest first, ordered by start time.
+    public func displayLines(_ count: Int, polished usePolish: Bool) -> [LiveLine] {
+        guard count > 0 else { return [] }
+        guard usePolish, hasPolish else {
+            return lastLines(count).map { LiveLine(id: "\($0.track)-\($0.seq)", isMe: $0.isMe, start: $0.start, text: $0.text) }
+        }
+        var covered = Set<String>()
+        var result: [LiveLine] = []
+        for paragraph in polished.values {
+            let keys = paragraph.seqs.map { "\(paragraph.track)-\($0)" }
+            covered.formUnion(keys)
+            let starts = segments.filter { $0.track == paragraph.track && paragraph.seqs.contains($0.seq) }.map(\.start)
+            result.append(LiveLine(id: "p-\(paragraph.track)-\(paragraph.para)", isMe: paragraph.isMe,
+                                   start: starts.min() ?? 0, text: paragraph.text))
+        }
+        for segment in segments where !covered.contains("\(segment.track)-\(segment.seq)") {
+            result.append(LiveLine(id: "\(segment.track)-\(segment.seq)", isMe: segment.isMe, start: segment.start, text: segment.text))
+        }
+        let visible = result.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .sorted { $0.start != $1.start ? $0.start < $1.start : $0.id < $1.id }
+        return Array(visible.suffix(count))
     }
 
     /// Segments whose text contains `query`, ignoring case and diacritics (also đ/d). Empty query = none.
@@ -54,6 +83,8 @@ public struct LiveTranscript: Equatable, Sendable {
             insert(segment)
         case let .liveStatus(_, status):
             self.status = status
+        case let .livePolish(_, paragraph):
+            polished["\(paragraph.track)-\(paragraph.para)"] = paragraph
         default:
             break
         }
@@ -70,4 +101,12 @@ public struct LiveTranscript: Equatable, Sendable {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
             .replacingOccurrences(of: "đ", with: "d")
     }
+}
+
+/// One line of the live view: a raw chunk or a polished paragraph.
+public struct LiveLine: Equatable, Sendable, Identifiable {
+    public let id: String
+    public let isMe: Bool
+    public let start: Double
+    public let text: String
 }

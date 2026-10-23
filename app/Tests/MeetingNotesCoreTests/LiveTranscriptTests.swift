@@ -86,4 +86,32 @@ struct LiveTranscriptTests {
         #expect(transcript.lastLines(3).map(\.speaker) == ["Me", "Others"])
         #expect(transcript.status?.rtf == 0.21)
     }
+
+    func polish(_ track: String, _ para: Int, _ seqs: [Int], _ text: String) -> WorkerEvent {
+        .livePolish(job: "live-1", LivePolish(track: track, speaker: track == "mic" ? "Me" : "Others", para: para, seqs: seqs, text: text))
+    }
+
+    @Test func polishReplacesCoveredChunksAndKeepsRaw() {
+        var transcript = LiveTranscript(job: "live-1")
+        transcript.apply(segment("mic", 0, 0, "xin chào"))
+        transcript.apply(segment("mic", 1, 2, "mọi người"))
+        transcript.apply(segment("system", 0, 3, "chào anh"))
+        transcript.apply(segment("mic", 2, 6, "hôm nay"))
+        #expect(!transcript.hasPolish)
+        #expect(transcript.displayLines(5, polished: true).map(\.text) == ["xin chào", "mọi người", "chào anh", "hôm nay"])
+        check(transcript.apply(polish("mic", 0, [0, 1], "Xin chào mọi người.")))
+        #expect(transcript.hasPolish)
+        // Polished paragraph replaces its chunks; the uncovered tail stays raw; order by start.
+        #expect(transcript.displayLines(5, polished: true).map(\.text) == ["Xin chào mọi người.", "chào anh", "hôm nay"])
+        #expect(transcript.displayLines(5, polished: true).first?.isMe == true)
+        // Raw view is unchanged.
+        #expect(transcript.displayLines(5, polished: false).map(\.text) == ["xin chào", "mọi người", "chào anh", "hôm nay"])
+        #expect(transcript.segments.count == 4)
+        // Same (track, para) replaces; identical event = no change.
+        check(transcript.apply(polish("mic", 0, [0, 1, 2], "Xin chào mọi người, hôm nay.")))
+        check(!transcript.apply(polish("mic", 0, [0, 1, 2], "Xin chào mọi người, hôm nay.")))
+        #expect(transcript.displayLines(2, polished: true).map(\.text) == ["Xin chào mọi người, hôm nay.", "chào anh"])
+        // Other jobs are ignored.
+        check(!transcript.apply(.livePolish(job: "live-2", LivePolish(track: "mic", speaker: "Me", para: 9, seqs: [], text: "x"))))
+    }
 }

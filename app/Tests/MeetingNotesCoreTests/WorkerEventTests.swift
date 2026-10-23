@@ -132,6 +132,26 @@ struct LiveWorkerEventTests {
         #expect(WorkerEvent.Command.live(job: "live-1", folder: "/n/2026 a/b")
             == #"{"cmd":"live","folder":"/n/2026 a/b","job":"live-1"}"# + "\n")
         #expect(WorkerEvent.Command.liveStop(job: "live-1") == #"{"cmd":"live_stop","job":"live-1"}"# + "\n")
+        #expect(WorkerEvent.Command.live(job: "live-1", folder: "/f", polish: "rules")
+            == #"{"cmd":"live","folder":"/f","job":"live-1","polish":"rules"}"# + "\n")
+    }
+
+    @Test func livePolishModeNeedsSettingAndFeature() {
+        #expect(WorkerEvent.Command.livePolishMode(enabled: true, features: ["live", "live_polish"]) == "rules")
+        #expect(WorkerEvent.Command.livePolishMode(enabled: true, features: ["live"]) == nil)
+        #expect(WorkerEvent.Command.livePolishMode(enabled: true, features: nil) == nil)
+        #expect(WorkerEvent.Command.livePolishMode(enabled: false, features: ["live", "live_polish"]) == nil)
+    }
+
+    @Test func livePolish() {
+        let line = #"{"event": "live_polish", "job": "live-1", "track": "system", "speaker": "Others", "para": 2, "seqs": [4, 5], "tier": "rules", "text": "Xin chào mọi người."}"#
+        let event = WorkerEvent(line: line)
+        #expect(event == .livePolish(job: "live-1", LivePolish(track: "system", speaker: "Others", para: 2, seqs: [4, 5],
+                                                                tier: "rules", text: "Xin chào mọi người.")))
+        #expect(event?.job == "live-1")
+        #expect(WorkerEvent(line: #"{"event": "live_polish", "job": "live-1", "text": "no track"}"#) == nil)
+        var snapshot = ProcessingSnapshot(job: "live-1", folder: "/f", title: "t")
+        if let event { check(!snapshot.apply(event)) }
     }
 }
 
