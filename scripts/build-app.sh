@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build MeetingNotes.app (release) with the MeetingNotesDiarize helper and the MeetingNotesLauncher agent
+# Build MeetingNotes.app (release) with the MeetingNotesDiarize and MeetingNotesCaptions helpers and the MeetingNotesLauncher agent
 # ("open the app when a meeting starts", Contents/Library/LaunchAgents), sign them with the local identity and
 # install the app to ~/Applications.
 #
@@ -30,6 +30,7 @@ IDENTITY="${CODESIGN_IDENTITY:-}"
 INSTALL=1
 FORCE=0
 HELPER="MeetingNotesDiarize"  # FluidAudio diarization CLI; the app passes its path to the pipeline worker
+CAPTIONS="MeetingNotesCaptions"  # live captions (WhisperKit on the Neural Engine); the app spawns it while recording
 LAUNCHER="MeetingNotesLauncher"  # per-user agent (SMAppService.agent), registered by the app's Settings
 LAUNCHER_LABEL="$BUNDLE_ID.launcher"
 
@@ -89,7 +90,7 @@ fi
 echo "==> swift build -c release"
 swift build -c release --package-path "$APP_PKG"
 BIN_DIR="$(swift build -c release --package-path "$APP_PKG" --show-bin-path)"
-for product in "$HELPER" "$LAUNCHER"; do
+for product in "$HELPER" "$CAPTIONS" "$LAUNCHER"; do
   [[ -x "$BIN_DIR/$product" ]] || { echo "missing $BIN_DIR/$product after the build" >&2; exit 1; }
 done
 
@@ -98,6 +99,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/MeetingNotes" "$APP/Contents/MacOS/MeetingNotes"
 cp "$BIN_DIR/$HELPER" "$APP/Contents/MacOS/$HELPER"
+cp "$BIN_DIR/$CAPTIONS" "$APP/Contents/MacOS/$CAPTIONS"
 cp "$BIN_DIR/$LAUNCHER" "$APP/Contents/MacOS/$LAUNCHER"
 cp "$APP_PKG/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"  # regenerate: scripts/make-icon.sh
 # launchd plist for SMAppService.agent(plistName:): each account registers its own copy (gui/<uid> domain).
@@ -175,6 +177,7 @@ fi
 echo "==> codesign ($IDENTITY)"
 # Inside out: the helpers first (own identifiers), then the app, whose seal covers the signed helpers.
 codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID.diarize" "$APP/Contents/MacOS/$HELPER"
+codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID.captions" "$APP/Contents/MacOS/$CAPTIONS"
 codesign --force --sign "$IDENTITY" --identifier "$LAUNCHER_LABEL" "$APP/Contents/MacOS/$LAUNCHER"
 if [[ "$PACKAGED" -eq 1 ]]; then
   codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID.uv" "$APP/Contents/MacOS/uv"

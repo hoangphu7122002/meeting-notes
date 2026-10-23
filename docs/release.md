@@ -85,7 +85,7 @@ at 10x; each CI run is ~10-15 min, plus about as much for the edge dmg on `maste
 | Item | Source |
 |---|---|
 | `MeetingNotes.app` (Info.plist `MNPackaged`, version = release) | `scripts/build-app.sh --packaged` |
-| `Contents/MacOS/{MeetingNotes, MeetingNotesDiarize, uv}` | `swift build -c release`, the build machine's uv |
+| `Contents/MacOS/{MeetingNotes, MeetingNotesDiarize, MeetingNotesCaptions, MeetingNotesLauncher, uv}` | `swift build -c release`, the build machine's uv |
 | `Contents/Resources/pipeline/` (source, `pyproject.toml`, `uv.lock`) | `pipeline/` without `.venv`, tests, bench, `.env` |
 | `Contents/Resources/THIRD-PARTY-NOTICES.txt` | `scripts/release/THIRD-PARTY-NOTICES.txt` |
 | `Applications` link, `ĐỌC TRƯỚC - Read me first.txt` (Open Anyway steps, vi + en) | `scripts/release/dmg-readme.txt` |

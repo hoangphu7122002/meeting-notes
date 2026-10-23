@@ -3,7 +3,7 @@
 #
 #   /Applications/MeetingNotes.app          app (or $SHARED_ROOT/MeetingNotes.app when /Applications is not writable)
 #   $SHARED_ROOT/pipeline/                  pipeline source + prebuilt .venv (uv-managed Python in python/)
-#   $SHARED_ROOT/models/                    FluidAudio, Hugging Face hub cache (whisper, embeddings)
+#   $SHARED_ROOT/models/                    FluidAudio, Hugging Face hub cache (whisper, embeddings), whisperkit (captions)
 #   $SHARED_ROOT/bin/                       uv, meeting-notes (CLI), meeting-notes-user-setup (per-account step)
 #   $SHARED_ROOT/shared-install.json        marker read by the app (PipelineLocator) and the pipeline (config/install.py)
 #
@@ -56,9 +56,10 @@ shared_plan() {
   echo "  shared   $SHARED_ROOT (owner $(id -un), world-readable, not world-writable): pipeline, venv, uv, models"
   echo "  copy     pipeline source to $SHARED_PIPELINE (no .env, no tests, no recordings)"
   echo "  sync     Python environment in $SHARED_PIPELINE/.venv with a uv-managed Python 3.12 in $SHARED_ROOT/python"
-  echo "  build    FluidAudio diarization helper (swift build -c release --product MeetingNotesDiarize)"
+  echo "  build    FluidAudio diarization + live caption helpers (swift build -c release --product ...)"
   if [[ "$SKIP_MODELS" -eq 0 ]]; then
     echo "  models   whisper + embeddings into $SHARED_HUB, FluidAudio into $SHARED_ROOT/models/fluidaudio;"
+    echo "           live caption model (WhisperKit, ~217 MB, no login) into $SHARED_ROOT/models/whisperkit;"
     echo "           Ollama summary model in the running Ollama (shared by the accounts, see docs)"
   fi
   echo "  app      scripts/build-app.sh: build, sign and install $APP (pipeline: $SHARED_PIPELINE)"
@@ -120,13 +121,17 @@ shared_install() {
     "$SHARED_UV" sync --project "$SHARED_PIPELINE" --frozen --no-dev --compile-bytecode
   run "$SHARED_PIPELINE/.venv/bin/python" -m compileall -q "$SHARED_PIPELINE/src"  # other accounts cannot write .pyc
 
-  say "FluidAudio diarization helper"
+  say "FluidAudio diarization and live caption helpers"
   run swift build -c release --package-path "$ROOT/app" --product MeetingNotesDiarize
+  run swift build -c release --package-path "$ROOT/app" --product MeetingNotesCaptions
 
   if [[ "$SKIP_MODELS" -eq 0 ]]; then
     say "Models into the shared store (default config; already downloaded ones are skipped)"
     run env MEETING_NOTES_CONFIG=/dev/null MEETING_NOTES_DIARIZE_CLI="$ROOT/app/.build/release/MeetingNotesDiarize" \
       "$SHARED_CLI" setup
+    # Live captions ("Fast captions"): other accounts cannot write the shared store, so the model is fetched here
+    # (ungated, pinned commit, no token); each account's Neural Engine cache is built on its first use.
+    run env -u HF_TOKEN "$ROOT/app/.build/release/MeetingNotesCaptions" --prepare --models "$SHARED_ROOT/models/whisperkit"
   fi
 
   say "Permissions: readable by every account, writable only by $(id -un)"

@@ -135,6 +135,8 @@ def test_shared_dry_run_plans_a_read_only_store_and_changes_nothing(env, shared)
         f"write {root}/shared-install.json",
         f"UV_PYTHON_INSTALL_DIR={root}/python UV_PYTHON_PREFERENCE=only-managed {root}/bin/uv sync --project {root}/pipeline --frozen",
         f"MEETING_NOTES_CONFIG=/dev/null",
+        "--product MeetingNotesCaptions",
+        f"MeetingNotesCaptions --prepare --models {root}/models/whisperkit",
         f"chmod -R u+rwX,go+rX,go-w {root}",
         f"build-app.sh --install-dir {shared['apps']} --pipeline-dir {root}/pipeline --uv-path {root}/bin/uv",
         f"{root}/bin/meeting-notes doctor",

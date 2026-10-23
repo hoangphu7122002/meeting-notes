@@ -11,7 +11,8 @@
 #                           Screen & System Audio grants survive updates; "-" = ad-hoc, e.g. in CI)
 #        UV                 uv binary to bundle (default: uv on PATH)
 #
-# The app bundles: MeetingNotes, MeetingNotesDiarize (FluidAudio), MeetingNotesLauncher (agent), uv, the
+# The app bundles: MeetingNotes, MeetingNotesDiarize (FluidAudio), MeetingNotesCaptions (WhisperKit),
+# MeetingNotesLauncher (agent), uv, the
 # pipeline source + uv.lock (Contents/Resources/pipeline) and third-party notices. Python, wheels and model weights
 # are downloaded by the app's first-run setup, never shipped. No .env, token, model or recording is ever copied
 # (checked below).
@@ -90,7 +91,7 @@ if [[ "$DRY_RUN" -eq 0 ]]; then
   codesign --verify --strict --deep "$APP" || die "signature check failed"
   [[ "$(plutil -extract MNPackaged raw -o - "$APP/Contents/Info.plist")" == true ]] || die "MNPackaged missing"
   ! plutil -extract MNPipelineDir raw -o - "$APP/Contents/Info.plist" >/dev/null 2>&1 || die "MNPipelineDir baked in"
-  for need in MacOS/MeetingNotes MacOS/MeetingNotesDiarize MacOS/MeetingNotesLauncher \
+  for need in MacOS/MeetingNotes MacOS/MeetingNotesDiarize MacOS/MeetingNotesCaptions MacOS/MeetingNotesLauncher \
               Library/LaunchAgents/com.hoangphu.meetingnotes.launcher.plist MacOS/uv Resources/pipeline/uv.lock \
               Resources/pipeline/pyproject.toml Resources/pipeline/src/meeting_notes/entrypoints/cli.py; do
     [[ -e "$APP/Contents/$need" ]] || die "bundle lacks $need"

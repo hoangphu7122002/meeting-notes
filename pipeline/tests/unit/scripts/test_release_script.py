@@ -35,7 +35,7 @@ def env(tmp_path):
     swift = bin_dir / "swift"
     swift.write_text(f'#!/bin/sh\necho "swift $*" >> "{calls}"\n'
                      f'case "$*" in *--show-bin-path*) echo "{products}";; '
-                     f'*) for b in MeetingNotes MeetingNotesDiarize MeetingNotesLauncher; do printf "#!/bin/sh\\n" > "{products}/$b"; '
+                     f'*) for b in MeetingNotes MeetingNotesDiarize MeetingNotesCaptions MeetingNotesLauncher; do printf "#!/bin/sh\\n" > "{products}/$b"; '
                      f'chmod 755 "{products}/$b"; done;; esac\n')
     swift.chmod(0o755)
     uv = bin_dir / "uv"
@@ -91,7 +91,7 @@ def test_packaged_build_bundles_pipeline_and_uv_and_never_installs(env):
     info = plistlib.loads((app / "Info.plist").read_bytes())
     assert info["MNPackaged"] is True and "MNPipelineDir" not in info and "MNUvPath" not in info
     assert info["CFBundleShortVersionString"] == "2.0.1"
-    for rel in ("MacOS/uv", "MacOS/MeetingNotesDiarize", "MacOS/MeetingNotesLauncher", "Resources/pipeline/uv.lock",
+    for rel in ("MacOS/uv", "MacOS/MeetingNotesDiarize", "MacOS/MeetingNotesCaptions", "MacOS/MeetingNotesLauncher", "Resources/pipeline/uv.lock",
                 "Resources/pipeline/pyproject.toml", "Resources/pipeline/src/meeting_notes/entrypoints/cli.py", "Resources/THIRD-PARTY-NOTICES.txt"):
         assert (app / rel).exists(), rel
     shipped = {p.name for p in (app / "Resources" / "pipeline").rglob("*")}
