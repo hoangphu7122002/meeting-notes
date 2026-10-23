@@ -48,7 +48,7 @@ class Config:
     # models/sherpa-onnx/). If sherpa-onnx is missing or fails, the pyannote path runs instead (noted).
     diarization_engine: str = "pyannote"
     sherpa_embedding_model: str = "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced"
-    sherpa_cluster_threshold: float = 0.5  # sherpa fast clustering; lower = more speakers
+    sherpa_cluster_threshold: float = 0.9  # sherpa fast clustering; lower = more speakers (0.5 over-split, bench)
     me_name: str = "Me"
     # "auto": several distinct voices on the mic (in-person meeting) get their own labels.
     # "me": everything on the mic track is the user.

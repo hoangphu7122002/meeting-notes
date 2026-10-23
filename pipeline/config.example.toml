@@ -38,7 +38,7 @@ diarization_device = "auto" # auto | mps | cpu
 # or fails, pyannote runs instead. The mic single-voice check still uses the pyannote embedding model.
 diarization_engine = "pyannote"
 sherpa_embedding_model = "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced"
-sherpa_cluster_threshold = 0.5  # sherpa only: lower = more speakers
+sherpa_cluster_threshold = 0.9  # sherpa only: lower = more speakers
 me_name = "Me"
 mic_speakers = "auto"       # "me": everything on the microphone is you
 # Check with a few voice embeddings whether the microphone holds only your voice; if sure, skip full
