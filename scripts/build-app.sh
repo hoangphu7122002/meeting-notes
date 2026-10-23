@@ -2,8 +2,11 @@
 # Build MeetingNotes.app (release) with the MeetingNotesDiarize helper, sign both with the local identity and
 # install the app to ~/Applications.
 #
-# Usage: scripts/build-app.sh [--no-install] [--force]
-#        --force  quit a running MeetingNotes even while it records (default: refuse; idle apps are quit)
+# Usage: scripts/build-app.sh [--no-install] [--force] [--install-dir DIR] [--pipeline-dir DIR] [--uv-path PATH]
+#        --force         quit a running MeetingNotes even while it records (default: refuse; idle apps are quit)
+#        --install-dir   where the app goes (default ~/Applications; install.sh --shared: /Applications)
+#        --pipeline-dir  baked as Info.plist MNPipelineDir (default: this repo's pipeline/)
+#        --uv-path       baked as Info.plist MNUvPath (default: uv on PATH)
 # Env:   CODESIGN_IDENTITY  signing identity. Default: the local self-signed identity created by
 #                           scripts/setup-signing.sh (created on first build), so macOS keeps
 #                           Microphone / Screen & System Audio permissions across rebuilds.
@@ -23,13 +26,24 @@ INSTALL=1
 FORCE=0
 HELPER="MeetingNotesDiarize"  # FluidAudio diarization CLI; the app passes its path to the pipeline worker
 
-for arg in "$@"; do
-  case "$arg" in
+PIPELINE_DIR="$ROOT/pipeline"
+UV_PATH=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --no-install) INSTALL=0 ;;
     --force) FORCE=1 ;;
-    -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
-    *) echo "unknown argument: $arg" >&2; exit 64 ;;
+    --install-dir|--pipeline-dir|--uv-path)
+      [[ $# -ge 2 && -n "$2" ]] || { echo "missing value for $1" >&2; exit 64; }
+      case "$1" in
+        --install-dir) INSTALL_DIR="$2" ;;
+        --pipeline-dir) PIPELINE_DIR="$2" ;;
+        --uv-path) UV_PATH="$2" ;;
+      esac
+      shift ;;
+    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; exit 64 ;;
   esac
+  shift
 done
 
 # shellcheck source=scripts/app-state.sh
@@ -37,13 +51,19 @@ source "$ROOT/scripts/app-state.sh"
 
 xml_escape() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' <<<"$1"; }
 
-PIPELINE_DIR="$ROOT/pipeline"
-UV_PATH="$(command -v uv || true)"
-if [[ -z "$UV_PATH" && -x "$HOME/.local/bin/uv" ]]; then UV_PATH="$HOME/.local/bin/uv"; fi
-UV_PATH="${UV_PATH:-/opt/homebrew/bin/uv}"
+if [[ -z "$UV_PATH" ]]; then
+  UV_PATH="$(command -v uv || true)"
+  if [[ -z "$UV_PATH" && -x "$HOME/.local/bin/uv" ]]; then UV_PATH="$HOME/.local/bin/uv"; fi
+  UV_PATH="${UV_PATH:-/opt/homebrew/bin/uv}"
+fi
 BUILD_NUMBER="$(date +%Y%m%d%H%M)"
 
 DEST="$INSTALL_DIR/MeetingNotes.app"
+others="$(mn_other_users "$DEST/" | tr '\n' ' ')"
+if [[ "$INSTALL" -eq 1 && -n "$others" ]]; then  # a shared app open in another account: never replaced under it
+  echo "MeetingNotes ($DEST) is open in another account: $others. Ask them to quit it (menu bar > Quit), then re-run." >&2
+  exit 1
+fi
 if [[ "$INSTALL" -eq 1 && "$FORCE" -eq 0 && -n "$(mn_app_pids "$DEST")" ]]; then
   case "$(mn_app_activity)" in
     recording|unknown)
@@ -107,6 +127,10 @@ codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID" "$APP"
 codesign --verify --strict --deep "$APP"
 
 if [[ "$INSTALL" -eq 1 ]]; then
+  if [[ -n "$(mn_other_users "$DEST/")" ]]; then  # opened in another account during the build
+    echo "MeetingNotes was opened in another account during the build; not installing. Built: $APP" >&2
+    exit 1
+  fi
   if [[ -n "$(mn_app_pids "$DEST")" ]]; then
     if [[ "$FORCE" -eq 0 && "$(mn_app_activity)" =~ ^(recording|unknown)$ ]]; then  # started during the build
       echo "MeetingNotes started recording during the build; not installing. Built: $APP" >&2
@@ -124,6 +148,7 @@ if [[ "$INSTALL" -eq 1 ]]; then
   mkdir -p "$INSTALL_DIR"
   rm -rf "$DEST"
   ditto "$APP" "$DEST"
+  chmod -R go+rX,go-w "$DEST"  # readable by every account when installed to /Applications (shared install)
   echo "Installed. Launch with: open \"$DEST\""
 else
   echo "Built $APP (not installed)"

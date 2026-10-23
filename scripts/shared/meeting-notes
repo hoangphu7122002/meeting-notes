@@ -1,0 +1,5 @@
+#!/bin/sh
+# meeting-notes CLI of a shared install (scripts/install.sh --shared puts this in <shared root>/bin/).
+# Runs the prebuilt, read-only environment directly: no uv sync, works from any account.
+root="$(cd "$(dirname "$0")/.." && pwd -P)"
+exec "$root/pipeline/.venv/bin/meeting-notes" "$@"

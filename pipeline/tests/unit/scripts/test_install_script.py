@@ -12,7 +12,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[4]
 INSTALL = ROOT / "scripts" / "install.sh"
-STUBS = ("brew", "swift", "curl", "open", "osascript", "codesign", "xcode-select", "ditto")
+STUBS = ("brew", "swift", "curl", "open", "osascript", "codesign", "xcode-select", "ditto", "sudo", "rsync", "install")
 
 
 @pytest.fixture
@@ -36,8 +36,8 @@ def env(tmp_path):
     return {"base": base, "state": state, "calls": calls, "bin": bin_dir}
 
 
-def run(env, *args, app_state=None):
-    extra = {}
+def run(env, *args, app_state=None, extra_env=None):
+    extra = dict(extra_env or {})
     if app_state is not None:
         env["state"].write_text(json.dumps({"state": app_state, "processing": None, "queue": 0}))
         extra["FAKE_APP_PID"] = "4242"
@@ -101,3 +101,113 @@ def test_unknown_argument_is_rejected(env):
 def test_help_lists_the_flags():
     out = subprocess.run(["bash", str(INSTALL), "--help"], capture_output=True, text=True, timeout=10).stdout
     assert all(flag in out for flag in ("--dry-run", "--yes", "--force", "--skip-models"))
+
+
+# ---------------------------------------------------------------- --shared
+
+
+@pytest.fixture
+def shared(env, tmp_path):
+    apps = tmp_path / "Applications"
+    apps.mkdir()
+    root = tmp_path / "Shared" / "MeetingNotes"
+    root.parent.mkdir()
+    return {"MN_SHARED_ROOT": str(root), "MN_APPLICATIONS_DIR": str(apps), "root": root, "apps": apps}
+
+
+def shared_env(shared):
+    return {k: v for k, v in shared.items() if k.startswith("MN_")}
+
+
+def commands(out):
+    return [line[2:] for line in out.splitlines() if line.startswith("+ ")]
+
+
+def test_shared_dry_run_plans_a_read_only_store_and_changes_nothing(env, shared):
+    proc, calls = run(env, "--shared", "--dry-run", extra_env=shared_env(shared))
+    assert proc.returncode == 0, proc.stderr
+    root, app = shared["root"], shared["apps"] / "MeetingNotes.app"
+    cmds = commands(proc.stdout)
+    for expected in (
+        f"rsync -a --delete --exclude .venv",
+        f"--exclude .env {ROOT}/pipeline/ {root}/pipeline/",
+        f"install -m 755 {ROOT}/scripts/user-setup.sh {root}/bin/meeting-notes-user-setup",
+        f"write {root}/shared-install.json",
+        f"UV_PYTHON_INSTALL_DIR={root}/python UV_PYTHON_PREFERENCE=only-managed {root}/bin/uv sync --project {root}/pipeline --frozen",
+        f"MEETING_NOTES_CONFIG=/dev/null",
+        f"chmod -R u+rwX,go+rX,go-w {root}",
+        f"build-app.sh --install-dir {shared['apps']} --pipeline-dir {root}/pipeline --uv-path {root}/bin/uv",
+        f"{root}/bin/meeting-notes doctor",
+    ):
+        assert any(expected in c for c in cmds), expected
+    assert f"{root}/bin/meeting-notes-user-setup --open" in proc.stdout and str(app) in proc.stdout
+    assert "dry run: nothing was changed" in proc.stdout
+    assert calls == [] and not root.exists()  # nothing ran, nothing created
+
+
+def test_shared_without_admin_rights_installs_the_app_in_the_shared_root_and_only_prints_sudo(env, shared):
+    shared["apps"].chmod(0o555)
+    try:
+        proc, calls = run(env, "--shared", "--dry-run", extra_env=shared_env(shared))
+    finally:
+        shared["apps"].chmod(0o755)
+    root = shared["root"]
+    assert proc.returncode == 0, proc.stderr
+    assert "not writable" in proc.stdout and f"--install-dir {root} " in proc.stdout
+    assert "sudo ditto" in proc.stdout and not any(c.startswith("sudo") for c in commands(proc.stdout))
+    assert calls == []
+
+
+def test_shared_root_writable_by_others_is_refused(env, shared):
+    shared["root"].mkdir()
+    shared["root"].chmod(0o777)
+    proc, calls = run(env, "--shared", "--dry-run", extra_env=shared_env(shared))
+    assert proc.returncode == 1 and "not safe to install into" in proc.stderr and calls == []
+
+
+def test_a_token_file_in_the_shared_root_is_refused(env, shared):
+    shared["root"].mkdir()
+    (shared["root"] / ".env").write_text("HF_TOKEN=x\n")
+    proc, _ = run(env, "--shared", "--dry-run", extra_env=shared_env(shared))
+    assert proc.returncode == 1 and "readable by every account" in proc.stderr and "HF_TOKEN=x" not in proc.stderr
+
+
+def test_an_app_open_in_another_account_is_never_replaced(env, shared):
+    app = shared["apps"] / "MeetingNotes.app"
+    ps = env["bin"] / "ps"
+    ps.write_text(f'#!/bin/sh\necho "99999 otheruser {app}/Contents/MacOS/MeetingNotes"\n')
+    ps.chmod(0o755)
+    for args in (("--shared", "--dry-run"), ("--shared", "--yes", "--force")):  # --force cannot quit their app
+        proc, calls = run(env, *args, extra_env=shared_env(shared))
+        assert proc.returncode == 1 and "otheruser" in proc.stderr and "==> Plan" not in proc.stdout
+        assert calls == []
+
+
+def test_user_setup_dry_run_touches_only_this_account(tmp_path):
+    root, home = tmp_path / "shared", tmp_path / "home"
+    (root / "pipeline" / ".venv" / "bin").mkdir(parents=True)
+    home.mkdir()
+    cli = root / "pipeline" / ".venv" / "bin" / "meeting-notes"
+    cli.write_text("#!/bin/sh\nexit 0\n")
+    cli.chmod(0o755)
+    (root / "shared-install.json").write_text(json.dumps({"version": 1, "app": "/Applications/MeetingNotes.app"}))
+    script = ROOT / "scripts" / "user-setup.sh"
+    environ = {"HOME": str(home), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "MN_SHARED_ROOT": str(root)}
+    proc = subprocess.run(["bash", str(script), "--dry-run", "--open"], capture_output=True, text=True, timeout=30,
+                          env=environ, stdin=subprocess.DEVNULL)
+    assert proc.returncode == 0, proc.stderr
+    cmds = commands(proc.stdout)
+    assert f"mkdir -p {home}/MeetingNotes {home}/.config/meeting-notes" in cmds
+    assert f"{cli} doctor --offline" in cmds and 'open /Applications/MeetingNotes.app' in cmds
+    assert "Screen & System Audio Recording" in proc.stdout and list(home.iterdir()) == []
+
+
+def test_user_setup_without_a_shared_install_explains_what_to_run(tmp_path):
+    script = ROOT / "scripts" / "user-setup.sh"
+    proc = subprocess.run(["bash", str(script), "--dry-run"], capture_output=True, text=True, timeout=30,
+                          env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin", "MN_SHARED_ROOT": str(tmp_path / "none")})
+    assert proc.returncode == 1 and "install.sh --shared" in proc.stderr
+
+
+def test_makefile_has_install_shared():
+    assert "install-shared:" in (ROOT / "Makefile").read_text()

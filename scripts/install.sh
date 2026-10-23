@@ -3,22 +3,25 @@
 # No Hugging Face account needed: the default FluidAudio diarizer uses ungated weights. HF_TOKEN in .env is
 # optional (only the pyannote fallback uses it).
 #
-# Usage: scripts/install.sh [--dry-run] [--yes] [--force] [--skip-models]
+# Usage: scripts/install.sh [--dry-run] [--yes] [--force] [--skip-models] [--shared]
 #   --dry-run      check and print the plan and every command; change nothing
 #   --yes          do not ask before installing missing tools or quitting an idle MeetingNotes
 #   --force        reinstall the app even while MeetingNotes records (quits it); never needed when it is idle
 #   --skip-models  skip model downloads (whisper, speaker embeddings, FluidAudio, Ollama summary model)
+#   --shared       one install for every account on this Mac: app in /Applications, pipeline + models in
+#                  /Users/Shared/MeetingNotes (read-only for other accounts); scripts/install-shared.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DRY_RUN=0 YES=0 FORCE=0 SKIP_MODELS=0
+DRY_RUN=0 YES=0 FORCE=0 SKIP_MODELS=0 SHARED=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     --yes|-y) YES=1 ;;
     --force) FORCE=1 ;;
     --skip-models) SKIP_MODELS=1 ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    --shared) SHARED=1 ;;
+    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
     *) echo "unknown argument: $arg (see --help)" >&2; exit 64 ;;
   esac
 done
@@ -27,6 +30,11 @@ done
 source "$ROOT/scripts/app-state.sh"
 
 APP="$HOME/Applications/MeetingNotes.app"
+if [[ "$SHARED" -eq 1 ]]; then
+  # shellcheck source=scripts/install-shared.sh
+  source "$ROOT/scripts/install-shared.sh"
+  shared_init  # APP = /Applications/MeetingNotes.app (or the shared root when not an admin)
+fi
 OLLAMA_API="http://127.0.0.1:11434/api/version"
 HOMEBREW_INSTALLER="https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"  # official
 INTERACTIVE=0
@@ -69,6 +77,8 @@ say "Checking this Mac"
 macos_major="$(sw_vers -productVersion | cut -d. -f1)"
 [[ "$macos_major" -ge 14 ]] || die "macOS 14 or newer is required (found $(sw_vers -productVersion))"
 
+[[ "$SHARED" -eq 1 ]] && shared_checks
+
 # A running MeetingNotes is quit only when it is idle (and you agree), never while it records unless --force.
 pids="$(mn_app_pids "$APP")"
 if [[ -n "$pids" ]]; then
@@ -101,13 +111,17 @@ say "Plan"
 [[ -z "$BREW" ]] && echo "  install  Homebrew (official installer from $HOMEBREW_INSTALLER; asks for your password)"
 [[ "${#formulas[@]}" -gt 0 ]] && echo "  install  brew: ${formulas[*]}"
 ollama_up || echo "  start    Ollama (brew services, or Ollama.app)"
-echo "  sync     Python environment: uv sync in pipeline/ (~0.35 GB download on first run)"
-echo "  build    FluidAudio diarization helper (swift build -c release --product MeetingNotesDiarize)"
-if [[ "$SKIP_MODELS" -eq 0 ]]; then
-  echo "  models   meeting-notes setup: whisper (~464 MB), speaker embeddings (27 MB), FluidAudio (~21 MB, no login),"
-  echo "           Ollama summary model (config ollama_model, default qwen3:4b ~2.5 GB); already present = skipped"
+if [[ "$SHARED" -eq 1 ]]; then
+  shared_plan
+else
+  echo "  sync     Python environment: uv sync in pipeline/ (~0.35 GB download on first run)"
+  echo "  build    FluidAudio diarization helper (swift build -c release --product MeetingNotesDiarize)"
+  if [[ "$SKIP_MODELS" -eq 0 ]]; then
+    echo "  models   meeting-notes setup: whisper (~464 MB), speaker embeddings (27 MB), FluidAudio (~21 MB, no login),"
+    echo "           Ollama summary model (config ollama_model, default qwen3:4b ~2.5 GB); already present = skipped"
+  fi
+  echo "  app      scripts/build-app.sh: build, sign and install $APP (with the diarization helper)"
 fi
-echo "  app      scripts/build-app.sh: build, sign and install $APP (with the diarization helper)"
 [[ -f "$ROOT/.env" ]] || echo "  note     no .env with HF_TOKEN: fine (optional, only for the pyannote fallback)"
 
 if [[ "$DRY_RUN" -eq 0 && ( "$missing_clt" -eq 1 || -z "$BREW" || "${#formulas[@]}" -gt 0 ) && "$INTERACTIVE" -eq 1 ]]; then
@@ -157,6 +171,12 @@ if ! ollama_up; then
 fi
 
 # ---------------------------------------------------------------- environment, helper, models, app
+
+if [[ "$SHARED" -eq 1 ]]; then
+  shared_install
+  shared_done
+  exit 0
+fi
 
 say "Python pipeline environment"
 run "$UV" sync --project "$ROOT/pipeline"

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install deps dev lint lint-arch test test-e2e build-app previews ci clean
+.PHONY: help install install-shared deps dev lint lint-arch test test-e2e build-app previews ci clean
 DIR ?= docs/screenshots
 
 help: ## List targets
@@ -7,6 +7,9 @@ help: ## List targets
 
 install: ## One-pass setup (idempotent): prerequisites, uv sync, models, app. ARGS=--dry-run|--yes|--force
 	scripts/install.sh $(ARGS)
+
+install-shared: ## Install for every account: /Applications + /Users/Shared/MeetingNotes. ARGS=--dry-run|--yes|--force
+	scripts/install.sh --shared $(ARGS)
 
 deps: ## Sync pipeline (uv) and resolve Swift packages
 	cd pipeline && uv sync

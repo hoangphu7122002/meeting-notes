@@ -6,9 +6,16 @@
 
 MN_APP_STATE_FILE="${MN_APP_STATE_FILE:-$HOME/Library/Application Support/MeetingNotes/state.json}"
 
-# PIDs of the app's main executable inside bundle $1 (not the MeetingNotesDiarize helper next to it).
+# PIDs of this account's app main executable inside bundle $1 (not the MeetingNotesDiarize helper next to it).
 mn_app_pids() {
-  pgrep -f "$1/Contents/MacOS/MeetingNotes( |\$)" 2>/dev/null || true
+  pgrep -U "$(id -u)" -f "^$1/Contents/MacOS/MeetingNotes( |\$)" 2>/dev/null || true
+}
+
+# Other accounts (user names, one per line) running an executable under path $1, e.g. a shared
+# app bundle or pipeline dir. Their apps are never quit from here (fast user switching: ask them to quit).
+mn_other_users() {
+  ps -axo uid=,user=,command= 2>/dev/null \
+    | awk -v me="$(id -u)" -v pat="$1" '$1 != me && index($3, pat) == 1 {print $2}' | sort -u
 }
 
 # recording | processing | idle | unknown, from the app's state.json. Only meaningful while the app runs.
