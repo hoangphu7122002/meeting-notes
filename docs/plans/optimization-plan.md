@@ -1,6 +1,8 @@
 # Optimization plan: speed after Stop, RAM, live transcription, one-click install
 
-Date: 2026-10-23. Status: **plan only, nothing built.** Machine: M1 Pro, 16 GB, macOS 15.5, memory pressure
+Date: 2026-10-23. Status: **W1 in progress**: Phase 0 harness (0.1, 0.2a synthetic fixtures, 0.4 run labels)
+and 1.1 mic-track skip are built; baseline under "normal" pressure, real fixtures (0.2b), `diar_bench` (0.3) and the
+baseline report (0.5) are open. Results: section 7. Machine: M1 Pro, 16 GB, macOS 15.5, memory pressure
 usually "warn" with 16-20 GB swap. Inputs: [`native-backend.md`](../research/native-backend.md),
 [`diarization-alternatives.md`](../research/diarization-alternatives.md),
 [`one-click-install.md`](../research/one-click-install.md), [`live-polish.md`](../research/live-polish.md),
@@ -102,6 +104,11 @@ also the cheapest task with the biggest chance of changing the plan.
 - **Acceptance:** 3 repeated runs within ±10 % wall time; report lists stage times, peak memory, swap delta for both conditions.
 - **Effort:** 3 days (+ user time to pick and label real meetings).
 - **User decision:** which meetings to donate as fixtures; nothing else.
+- **Status (W1):** 0.1 + 0.2a + 0.4 built as `pipeline/bench/pipeline_bench.py` (`make | run | report`),
+  `bench/meeting_fixture.py` (seeded `say` meetings, any length, 1-6 remote voices, optional second local voice
+  and bleed, reference JSON + RTTM) and `bench/bench_metrics.py` (DER with optimal mapping and collar, WER per
+  track, vm_stat / swap parsing). MPS allocation is not recorded (process RSS + MLX peak only). Open: 0.2b real
+  fixtures, 0.3 `diar_bench`, 0.5 clean-vs-warn baseline (pressure was "warn" for every run so far).
 
 ---
 
@@ -131,6 +138,11 @@ the time, with no new dependency and no install change. They also make every lat
 - **Acceptance:** on fixtures, mic labels identical to today on single-voice mics; ≥ 95 % of multi-voice mic fixtures
   take the full path; DER unchanged ±0.5 pp; diarize stage ≥ 35 % faster on the 60 min synthetic.
 - **Effort:** 2 days. **Decision:** none (default behaviour keeps today's results).
+- **Status (W1): built**, config key `mic_voice_check = true` (new public key). `domain/voice_check.py`: energy VAD,
+  up to 48 evenly spread 3 s windows with remote speech (dilated system turns) excluded, wespeaker embeddings,
+  average-linkage split at cosine distance 0.45; sure single voice only if one group holds all but <= 10 % stray
+  windows; < 30 s of mic speech is single by construction. Several voices or unsure: full pyannote, byte-identical
+  output (unit-tested). Check costs ~1-2 s (+ ~4 s embedding model load). Measured: section 7.
 
 #### 1.2 One encoder pass per block (dedupe language detection)
 
@@ -377,3 +389,34 @@ and the decisions in section 5.
 | Notarization / Developer ID | No Apple Developer account (user decision) |
 | Apple SpeechAnalyzer | macOS 26 only |
 | Cloud ASR, diarization or LLM | AGENTS rules 1-2 |
+
+---
+
+## 7. Measurements (W1)
+
+All runs: M1 Pro 16 GB, on battery, Ollama models not resident, summaries skipped, pipeline priority "low", one
+job at a time. **Every run below ended under memory pressure "warn"** (started "normal" except the 2 min smoke;
+swap used ~17-19 GB), so these are "typical", not "clean", numbers. Synthetic `say` fixtures only.
+
+Mic voice check verdicts (no pipeline run): 2 min and 12 min single voice → one voice (17/17, 48/48 windows);
+10 min with a second person on the mic → several voices (full path); 10 min with speaker bleed → one voice
+(47/48 windows, bleed excluded).
+
+`pipeline_bench.py run <12 min, 1 local voice, 2 remote> --set mic_voice_check=true|false`, 2 runs each (medians):
+
+| | diarize | transcribe | wall | peak RSS | WER all (mic) | DER (collar 0 / 0.25) | mic labels |
+|---|---|---|---|---|---|---|---|
+| check off (today) | 104.9 s | 171.5 s | 288.1 s | 1.34 GB | 6.88 % (12.55 %) | 5.3 % / 0.5 % | Me |
+| check on | 60.6 s (**-42 %**) | 187.7 s | 260.0 s (**-10 %**) | 1.41 GB | 7.49 % (13.72 %) | 4.4 % / 0.3 % | Me |
+
+2 min smoke (1 run each, warn): diarize 26.9 → 21.5 s, WER identical, DER 4.6 → 4.1 %.
+
+- Acceptance "diarize ≥ 35 % faster" passes on the 12 min fixture (60 min not run: pressure).
+- WER is deterministic across repeats. The +0.61 pp is one whisper hallucination: a 0.37 s segment at the end of
+  a VAD-bounded block decoded as 20 words of YouTube outro ("Cảm ơn các bạn đã theo dõi ... lalaschool"); the
+  phrase filter (`domain/segments.py:is_hallucination`) misses it because the block is long and the text is longer
+  than the phrase + 20 chars. Excluding that sentence on both sides, the skip path has fewer mic errors than today (167 vs 175 of
+  1,028 words). Follow-up: reject segments whose word rate is impossible (> ~8 words/s) when they contain a known
+  phrase; re-measure before calling the WER guard met.
+- Transcribe +16 s: VAD gives more, shorter mic turns (75 vs 56) than pyannote, so more whisper calls; 1.2 (one
+  encoder pass) attacks exactly this per-call floor.

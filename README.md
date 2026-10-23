@@ -121,6 +121,7 @@ The stages are `prepare → diarize → transcribe → summarize → render → 
 - **Speakers:** the mic track is "Me". System audio is diarized separately, so remote participants become Speaker 1, 2, and so on.
   - **No headphones:** if the mic hears your speakers, mic activity during remote speech is treated as echo and dropped.
   - **In-person meetings:** several distinct voices on the mic get their own labels (`mic_speakers = "me"` turns this off).
+  - **Single-voice mic (faster):** before the full diarization pass on the mic, a quick check (voice activity plus a few voice embeddings, remote speech left out) decides whether the mic holds only your voice. If it is sure, the full pass is skipped and your turns come from voice activity; if it is unsure or hears several voices, the full pass runs as before. `mic_voice_check = false` turns the check off.
 - **Transcription:** whisper large-v3-turbo (4-bit, `mlx-community/whisper-large-v3-turbo-q4`) runs per speaker block. The language is detected per block and per turn, restricted to `languages` (default `["vi", "en"]`), so mixed Vietnamese/English meetings are transcribed in the right language turn by turn. Typical Whisper hallucinations on silence ("Hẹn gặp lại các bạn trong những video tiếp theo", "Thanks for watching") are filtered out.
 - **Summary:** Ollama `qwen3:4b` by default (thinking disabled, JSON-schema output, temperature 0.2) produces the summary, decisions, action items and open questions in the main language. Long meetings (over `summary_chunk_chars`, ~20 min) are extracted part by part (`summary_extract_chars`); lines with explicit decision words, a commitment with a deadline, or a question said to be open are checked so none is lost, and the items are merged in Python rather than by the model. On a 1-hour synthetic test this raised recall of the 10 planted decisions/action items/questions from 1-2/10 to 10/10 (`pipeline/bench/summary_bench.py --long`).
 
@@ -227,6 +228,9 @@ cd pipeline
 uv run pytest                                       # unit tests (fast, no models)
 MEETING_NOTES_E2E=1 uv run pytest tests/e2e/test_e2e.py # end-to-end: synthetic Vietnamese/English meeting via `say` + real models + Ollama
 uv run python tests/e2e/make_synthetic.py /tmp/x    # just generate the synthetic meeting
+uv run python bench/pipeline_bench.py make /tmp/fx --minutes 12   # long synthetic two-track meeting + reference turns/text
+uv run python bench/pipeline_bench.py run /tmp/fx --repeat 3 [--set mic_voice_check=false] [--allow-warn]
+uv run python bench/pipeline_bench.py report /tmp/fx  # medians: stage times, peak RSS, swap delta, pressure, WER, DER
 cd ../app && swift build && swift test             # app debug build + unit tests (Core + UI)
 swift run MeetingNotesPreviews ../docs/screenshots  # offscreen PNGs of the pill and main window (fake state; never starts the app)
 ~/Applications/MeetingNotes.app/Contents/MacOS/MeetingNotes --self-test-record 20 /tmp/mn-test --pause-at 6 --pause-for 5   # headless recording test

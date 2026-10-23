@@ -28,13 +28,13 @@ app/Tests/               Core + UI tests
 pipeline/src/meeting_notes/
   config/                settings kernel (Config, TOML + env loader, hf_token, redact)
   domain/                pure: stdlib + numpy/scipy; intervals, signal, speakers, segments, notes rules/markdown, metrics,
-                         live_chunks / live_backlog / partial_merge (live transcription policy)
+                         live_chunks / live_backlog / partial_merge (live transcription policy), voice_check (mic single-voice test)
   application/           use cases + ports.py (Protocols): process_meeting, summarize_meeting, transcribe_blocks, import_audio,
                          live_transcribe (live job), live_reuse (Stop-time reuse of live partials)
   adapters/outbound/     one vendor or sink per file: ffmpeg, wav, meeting folder, pyannote, mlx, ollama, hf hub, progress
   adapters/inbound/      commands.py (CLI handlers), worker.py (JSON-lines worker)
   entrypoints/           cli.py (argparse main), wiring.py (dependency factory)
-pipeline/tests/          unit/{domain,application,adapters} architecture/ e2e/ · pipeline/bench/ (asr, summary benches) · pipeline/scripts/ (model converter)
+pipeline/tests/          unit/{domain,application,adapters} architecture/ e2e/ · pipeline/bench/ (pipeline harness + long fixtures, asr, summary, live benches) · pipeline/scripts/ (model converter)
 scripts/                 install.sh build-app.sh setup-signing.sh check-swift-arch.sh
 docs/  models/  build/   research + screenshots; model weights (ignored); app bundle output (ignored)
 ```
