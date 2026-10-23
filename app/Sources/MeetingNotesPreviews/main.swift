@@ -3,7 +3,7 @@ import MeetingNotesCore
 import MeetingNotesUI
 import SwiftUI
 
-// `swift run MeetingNotesPreviews <dir>`: renders the pill (collapsed + expanded), the main window in
+// `swift run MeetingNotesPreviews <dir>`: renders the menu bar icons, the pill (collapsed + expanded), the main window in
 // every state and the Settings window, light and dark, at 2x, into <dir>. Offscreen only: no window is ever ordered on screen,
 // nothing is recorded, and the app is not started (this target does not contain it).
 // The renderer process is never active, so AppKit draws prominent (tinted) buttons in their inactive
@@ -171,6 +171,9 @@ MainActor.assumeIsolated {
     func wanted(_ name: String) -> Bool { only.map { name.contains($0) } ?? true }
 
     for appearance in Appearance.allCases {
+        for scale: CGFloat in [1, 2] where wanted("menubar") {
+            renderGlyphSheet(appearance: appearance, scale: scale, dir: dir)
+        }
         for scenario in Scenario.allCases {
             for expanded in [false, true] where wanted("pill-\(scenario.rawValue)") {
                 renderPill(scenario, expanded: expanded, lang: .vi, appearance: appearance, dir: dir)

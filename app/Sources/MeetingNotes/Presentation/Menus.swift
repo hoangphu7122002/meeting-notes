@@ -189,7 +189,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let controller: AppController
     private unowned let hub: UIHub
-    private var iconKey = ""
+    private var iconKey: StatusIcon?
 
     init(controller: AppController, hub: UIHub) {
         self.controller = controller
@@ -204,51 +204,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     func update(force: Bool = false) {
         item.button?.toolTip = "Meeting Notes – \(controller.pill.label())"
         item.button?.setAccessibilityLabel(item.button?.toolTip)
-        let key: String
-        switch controller.pill {
-        case .idle(let attention): key = attention ? "attention" : "idle"
-        case .starting, .stopping: key = "busy"
-        case .recording: key = "recording"
-        case .paused: key = "paused"
-        case .processing: key = "processing"
-        case .ready: key = "ready"
-        case .error: key = "error"
-        }
-        guard force || key != iconKey else { return }
-        iconKey = key
-        item.button?.image = Self.icon(key)
+        let icon = StatusIcon(controller.pill)
+        guard force || icon != iconKey else { return }
+        iconKey = icon
+        item.button?.image = StatusIconImage.make(icon)
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         MenuFactory.fillStatusMenu(menu, controller: controller, hub: hub)
     }
-
-    private static func icon(_ key: String) -> NSImage? {
-        if key == "recording" { return redDot }
-        let name: String
-        switch key {
-        case "attention", "error": name = "exclamationmark.triangle"
-        case "busy": name = "ellipsis.circle"
-        case "paused": name = "pause.circle"
-        case "processing": name = "arrow.triangle.2.circlepath.circle"
-        case "ready": name = "checkmark.circle"
-        default: name = "mic"
-        }
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: "Meeting Notes")
-        image?.isTemplate = true
-        return image
-    }
-
-    private static let redDot: NSImage = {
-        let image = NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
-            NSColor.systemRed.setFill()
-            NSBezierPath(ovalIn: rect.insetBy(dx: 2.5, dy: 2.5)).fill()
-            return true
-        }
-        image.isTemplate = false
-        image.accessibilityDescription = "Recording"
-        return image
-    }()
 }
 
 /// Rebuilds the main menu's Recording menu when it opens.

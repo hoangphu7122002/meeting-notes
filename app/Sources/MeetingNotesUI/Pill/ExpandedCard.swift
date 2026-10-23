@@ -62,8 +62,11 @@ struct ExpandedCard: View {
         case .ready: Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.ok)
         case .error: Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(Palette.recording)
         case .idle(let attention):
-            Image(systemName: attention ? "exclamationmark.triangle.fill" : "mic.circle")
-                .foregroundStyle(attention ? Palette.warning : Palette.secondary)
+            if attention {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.warning)
+            } else {
+                BrandGlyphIcon(size: 18)
+            }
         default: Image(systemName: "ellipsis.circle").foregroundStyle(Palette.secondary)
         }
     }

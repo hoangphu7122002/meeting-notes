@@ -74,7 +74,7 @@ struct CollapsedPill: View {
                 Button(tr(.actionFix)) { commands.showMainWindow() }
                     .buttonStyle(PillButtonStyle(kind: .secondary, size: .small))
             } else {
-                Image(systemName: "mic.fill").foregroundStyle(Palette.secondary)
+                BrandGlyphIcon(size: 16)
                 stateLabel
                 Spacer(minLength: 8)
             }
