@@ -30,6 +30,12 @@ extension AppController {
         ui?.showDetectionCard(nil)
     }
 
+    /// The launcher agent ("Open the app when a meeting starts") follows the stored setting. Best effort: a
+    /// failure shows in Settings, where the toggle re-reads the agent's state.
+    func syncMeetingLauncher() {
+        try? MeetingLauncherItem.sync()
+    }
+
     func setDetectionEnabled(_ enabled: Bool) {
         Settings.detectionEnabled = enabled
         if enabled {

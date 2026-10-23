@@ -27,6 +27,9 @@ public struct SettingsView: View {
     @State private var showInDock: Bool
     @State private var pillMode: PillMode
     @State private var advancedOpen: Bool
+    @State private var openForMeetings: Bool
+    @State private var launcher: LoginItemState
+    @State private var launcherError: String?
 
     public init(state: AppState, commands: any AppCommands, detectionSupported: Bool, values: SettingsValues? = nil,
                 memoryGB: Double = SettingsValues.physicalMemoryGB, version: String = AppInfo.versionString,
@@ -50,6 +53,8 @@ public struct SettingsView: View {
         _showInDock = State(initialValue: values.showInDock)
         _pillMode = State(initialValue: values.pillMode)
         _advancedOpen = State(initialValue: advancedOpen)
+        _openForMeetings = State(initialValue: values.openForMeetings)
+        _launcher = State(initialValue: values.launcher)
     }
 
     private var env: SettingsEnvironment {
@@ -173,6 +178,14 @@ public struct SettingsView: View {
     }
 
     @ViewBuilder private var advanced: some View {
+        Toggle(isOn: Binding(get: { openForMeetings }, set: setOpenForMeetings)) {
+            SettingLabel(tr(.openForMeetings), help: launcherError ?? tr(SettingsRules.openForMeetingsHelp(
+                on: openForMeetings, state: launcher, detection: detection, env)),
+                         warning: launcherError != nil || SettingsRules.openForMeetingsWarning(
+                            on: openForMeetings, state: launcher, detection: detection, env))
+        }
+        .disabled(!SettingsRules.openForMeetingsEnabled(detection: detection, env))
+
         Toggle(isOn: $liveTranscription) {
             SettingLabel(tr(.liveTranscriptionToggle), help: tr(.liveTranscriptionCaption))
         }
@@ -221,5 +234,16 @@ public struct SettingsView: View {
             loginError = error.localizedDescription
         }
         login = LoginItem.state
+    }
+
+    private func setOpenForMeetings(_ value: Bool) {
+        openForMeetings = value
+        do {
+            try MeetingLauncherItem.set(value)
+            launcherError = nil
+        } catch {
+            launcherError = error.localizedDescription
+        }
+        launcher = MeetingLauncherItem.state
     }
 }

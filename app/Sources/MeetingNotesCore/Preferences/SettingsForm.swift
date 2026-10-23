@@ -49,6 +49,21 @@ public enum LoginItemState: Sendable, Equatable {
     public var canToggle: Bool { self != .unavailable }
 }
 
+/// What the app does at launch so the launcher agent follows the stored "open for meetings" setting.
+public enum LauncherSync: Equatable, Sendable {
+    case register, unregister, none
+
+    /// Registers when on and not registered; unregisters when off and still registered. Leaves an item waiting
+    /// for approval alone (the user decides in Login Items) and does nothing where agents are unavailable (dev builds).
+    public init(enabled: Bool, state: LoginItemState) {
+        switch (enabled, state) {
+        case (true, .off): self = .register
+        case (false, .enabled), (false, .requiresApproval): self = .unregister
+        default: self = .none
+        }
+    }
+}
+
 /// The groups of the Settings window, in order. `advanced` is collapsed by default.
 public enum SettingsGroup: CaseIterable, Sendable {
     case basics, duringMeeting, afterMeeting, advanced
@@ -103,6 +118,23 @@ public enum SettingsRules {
     public static func stopOnCallEndHelp(detection: Bool, _ env: SettingsEnvironment) -> Tr {
         if !env.detectionSupported { return .detectionRequires }
         return detection ? .helpCountdown : .helpStopOnCallEndNeedsDetection
+    }
+
+    /// "Open the app when a meeting starts" opens the app to show the detection prompt: useless without detection.
+    public static func openForMeetingsEnabled(detection: Bool, _ env: SettingsEnvironment) -> Bool {
+        env.detectionSupported && detection
+    }
+
+    /// Help line under "Open the app when a meeting starts"; the agent's state only matters while it is on.
+    public static func openForMeetingsHelp(on: Bool, state: LoginItemState, detection: Bool, _ env: SettingsEnvironment) -> Tr {
+        if !env.detectionSupported { return .detectionRequires }
+        if !detection { return .helpStopOnCallEndNeedsDetection }
+        if on, let note = state.note { return note }
+        return .helpOpenForMeetings
+    }
+
+    public static func openForMeetingsWarning(on: Bool, state: LoginItemState, detection: Bool, _ env: SettingsEnvironment) -> Bool {
+        env.detectionSupported && detection && on && state.note != nil
     }
 
     public static func silenceHelp(minutes: Int) -> Tr { minutes == 0 ? .helpSilenceOff : .helpSilence }

@@ -119,6 +119,7 @@ final class AppController {
         detector.onStop = { [weak self] app in MainActor.assumeIsolated { self?.meetingAppStopped(app) } }
         detector.onWatchedAppEnded = { [weak self] app in MainActor.assumeIsolated { self?.watchedAppEnded(app) } }
         if Settings.detectionEnabled { detector.start() }
+        syncMeetingLauncher()
         registerHotKeys()
         _ = refreshPermissions()
         if let folder = Settings.lastNotesFolder, FileManager.default.fileExists(atPath: folder.appendingPathComponent("notes.md").path) {

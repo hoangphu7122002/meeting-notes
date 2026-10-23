@@ -148,7 +148,7 @@ public enum Tr: String, CaseIterable, Sendable {
     case summaryModelLabel, modelLight, modelBetter, helpSummary, helpSummaryLowMemory, saveLocation
     case liveTranscriptionToggle, liveTranscriptionCaption, livePolishToggle, livePolishCaption, liveShowRaw, liveShowPolished
     case pillLabel, pillWhileRecording, pillAlways, pillNever, helpPill, helpPillNever, actionResetPosition
-    case showInDock, helpDock, version
+    case showInDock, helpDock, version, openForMeetings, helpOpenForMeetings
 
     // Notes viewer
     case summaryInProgress, noNotes, searchTranscript, summaryHeading, decisionsHeading, actionItemsHeading
@@ -495,6 +495,8 @@ public enum Tr: String, CaseIterable, Sendable {
         case .showInDock: return ("Hiện biểu tượng ở Dock", "Show icon in the Dock")
         case .helpDock: return ("Tắt: app chỉ nằm trên thanh menu.", "Off: the app lives only in the menu bar.")
         case .version: return ("Phiên bản", "Version")
+        case .openForMeetings: return ("Tự mở app khi vào họp", "Open the app when a meeting starts")
+        case .helpOpenForMeetings: return ("Mở và hỏi ghi khi Zoom, Meet… bắt đầu, kể cả sau khi Thoát. Tắt để ngừng.", "Opens and asks to record when Zoom, Meet… start, even after Quit. Turn off to stop.")
         case .liveShowRaw: return ("Xem bản gốc", "Show raw")
         case .liveShowPolished: return ("Xem bản đã làm gọn", "Show tidied")
 

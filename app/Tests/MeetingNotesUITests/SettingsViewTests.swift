@@ -1,5 +1,6 @@
 import AppKit
 import MeetingNotesCore
+import MeetingNotesLaunch
 @testable import MeetingNotesUI
 import SwiftUI
 import Testing
@@ -12,7 +13,10 @@ struct SettingsViewTests {
         Settings.registerDefaults()
         var current = SettingsValues.current()
         current.login = .off
+        current.launcher = .off  // the agent's registration depends on the machine, not on defaults
         #expect(current == SettingsValues())
+        #expect(Settings.Key.openForMeetings == "openForMeetings" && Settings.Key.detection == MeetingLauncher.Key.detection)
+        #expect(Settings.Key.detectionSnoozeUntil == MeetingLauncher.Key.detectionSnoozeUntil)
         #expect(Settings.Key.showRecordingPill == "showRecordingPill" && Settings.Key.showIdlePill == "showIdlePill")
         #expect(Settings.Key.autoStopOnCallEnd == "autoStopOnCallEnd" && Settings.Key.notesDir == "notesDir")
     }
@@ -23,7 +27,8 @@ struct SettingsViewTests {
             for open in [false, true] {
                 let state = AppState(notesDir: URL(fileURLWithPath: "/tmp/notes"), createNotesMode: .whenIdle)
                 state.microphone = .denied
-                let values = SettingsValues(login: .requiresApproval, detection: false, silenceMinutes: 20, pillMode: .never)
+                let values = SettingsValues(login: .requiresApproval, detection: false, silenceMinutes: 20, pillMode: .never,
+                                            openForMeetings: open, launcher: .requiresApproval)
                 let view = SettingsView(state: state, commands: NoopCommands(), detectionSupported: true, values: values,
                                         memoryGB: 8, version: "test", advancedOpen: open, height: nil)
                 let hosting = NSHostingView(rootView: view)

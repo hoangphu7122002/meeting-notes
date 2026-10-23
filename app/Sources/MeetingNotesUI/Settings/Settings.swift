@@ -1,5 +1,6 @@
 import Foundation
 import MeetingNotesCore
+import MeetingNotesLaunch
 
 /// User preferences in `UserDefaults` (domain `com.hoangphu.meetingnotes`).
 public enum Settings {
@@ -27,6 +28,8 @@ public enum Settings {
         public static let showRecordingPill = "showRecordingPill"
         public static let liveTranscription = "liveTranscription"
         public static let livePolish = "livePolish"
+        /// Read by the launcher agent too (`MeetingLauncher.Key`).
+        public static let openForMeetings = MeetingLauncher.Key.openForMeetings
     }
 
     private static var defaults: UserDefaults { .standard }
@@ -44,6 +47,7 @@ public enum Settings {
             Key.autoStopOnCallEnd: true,
             Key.liveTranscription: false,
             Key.livePolish: false,
+            Key.openForMeetings: true,
         ])
     }
 
@@ -152,6 +156,13 @@ public enum Settings {
     public static var livePolish: Bool {
         get { defaults.bool(forKey: Key.livePolish) }
         set { defaults.set(newValue, forKey: Key.livePolish) }
+    }
+
+    /// "Open the app when a meeting starts": the launcher agent is registered while this is on (see
+    /// `MeetingLauncherItem`); it also reads this key, so turning it off stops it at once.
+    public static var openForMeetings: Bool {
+        get { defaults.bool(forKey: Key.openForMeetings) }
+        set { defaults.set(newValue, forKey: Key.openForMeetings) }
     }
 
     public static var detectionSnoozeUntil: Date? {

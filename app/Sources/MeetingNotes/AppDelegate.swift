@@ -1,5 +1,6 @@
 import AppKit
 import MeetingNotesCore
+import MeetingNotesLaunch
 import MeetingNotesUI
 
 @MainActor
@@ -38,12 +39,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.state.showGettingStarted = !Settings.onboardingDone
         controller.launch()
         hub.start()
-        // The main window is the app's home (it also holds the permission checklist on first launch).
-        hub.showMainWindow()
+        // The main window is the app's home (it also holds the permission checklist on first launch). Opened by the
+        // launcher agent for a meeting: stay quiet, the detector's scan at launch shows the usual record prompt.
+        if !Self.openedForMeeting || !Settings.onboardingDone { hub.showMainWindow() }
         let pending = pendingURLs
         pendingURLs = []
         pending.forEach(controller.handle)
     }
+
+    /// Launched by MeetingNotesLauncher because a meeting started (`--opened-for-meeting`).
+    static let openedForMeeting = CommandLine.arguments.contains(MeetingLauncher.openedForMeetingArgument)
 
     /// Dock icon click, `open -a MeetingNotes`, Finder/Spotlight while running: show the main window.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

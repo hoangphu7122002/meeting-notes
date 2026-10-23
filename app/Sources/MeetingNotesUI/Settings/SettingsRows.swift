@@ -17,11 +17,14 @@ public struct SettingsValues: Equatable, Sendable {
     public var livePolish: Bool
     public var showInDock: Bool
     public var pillMode: PillMode
+    /// "Open the app when a meeting starts" (stored) and its launcher agent's registration.
+    public var openForMeetings: Bool
+    public var launcher: LoginItemState
 
     public init(login: LoginItemState = .off, detection: Bool = true, silenceMinutes: Int = 15, stopOnCallEnd: Bool = true,
                 createNotesMode: CreateNotesMode = .rightAway, summaryModel: SummaryModel = .light,
                 liveTranscription: Bool = false, livePolish: Bool = false, showInDock: Bool = true,
-                pillMode: PillMode = .whileRecording) {
+                pillMode: PillMode = .whileRecording, openForMeetings: Bool = true, launcher: LoginItemState = .off) {
         self.login = login
         self.detection = detection
         self.silenceMinutes = silenceMinutes
@@ -32,6 +35,8 @@ public struct SettingsValues: Equatable, Sendable {
         self.livePolish = livePolish
         self.showInDock = showInDock
         self.pillMode = pillMode
+        self.openForMeetings = openForMeetings
+        self.launcher = launcher
     }
 
     /// What the app has stored now.
@@ -42,7 +47,8 @@ public struct SettingsValues: Equatable, Sendable {
                        createNotesMode: Settings.createNotesMode, summaryModel: Settings.summaryModel,
                        liveTranscription: Settings.liveTranscription, livePolish: Settings.livePolish,
                        showInDock: Settings.showInDock,
-                       pillMode: PillMode(whileRecording: Settings.showRecordingPill, whenIdle: Settings.showIdlePill))
+                       pillMode: PillMode(whileRecording: Settings.showRecordingPill, whenIdle: Settings.showIdlePill),
+                       openForMeetings: Settings.openForMeetings, launcher: MeetingLauncherItem.state)
     }
 
     public static var physicalMemoryGB: Double { Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824 }
