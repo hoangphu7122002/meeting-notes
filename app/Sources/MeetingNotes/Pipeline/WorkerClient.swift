@@ -73,9 +73,9 @@ final class WorkerClient {
 
     private func spawn(priority: String, model: String) throws {
         let fm = FileManager.default
-        let uv = Settings.uvPath
+        guard let location = Settings.pipelineLocation else { throw AppError(tr(.errPipelineNotConfigured)) }
+        let uv = location.uvPath, pipelineDir = location.pipelineDir
         guard fm.isExecutableFile(atPath: uv) else { throw AppError(tr(.errUvNotFound, uv)) }
-        guard let pipelineDir = Settings.pipelineDir else { throw AppError(tr(.errPipelineNotConfigured)) }
         guard fm.fileExists(atPath: pipelineDir) else { throw AppError(tr(.errPipelineNotFound, pipelineDir)) }
 
         let process = Process()
@@ -88,6 +88,7 @@ final class WorkerClient {
         environment["PYTHONUNBUFFERED"] = "1"
         environment["MEETING_NOTES_PRIORITY"] = priority
         environment["MEETING_NOTES_OLLAMA_MODEL"] = model
+        environment = PipelineLocator.workerEnvironment(environment, location: location)
         environment = DiarizeHelper.workerEnvironment(environment, executableURL: Bundle.main.executableURL) {
             fm.isExecutableFile(atPath: $0)
         }

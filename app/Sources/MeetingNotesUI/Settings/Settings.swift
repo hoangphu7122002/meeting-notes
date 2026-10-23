@@ -177,19 +177,22 @@ public enum Settings {
         set { defaults.set(newValue?.path, forKey: Key.lastNotesFolder) }
     }
 
-    /// Pipeline project dir: defaults override, then Info.plist `MNPipelineDir`, then `MN_PIPELINE_DIR`.
-    public static var pipelineDir: String? {
-        nonEmpty(defaults.string(forKey: Key.pipelineDir))
-            ?? nonEmpty(AppInfo.info["MNPipelineDir"] as? String)
-            ?? nonEmpty(ProcessInfo.processInfo.environment["MN_PIPELINE_DIR"])
+    /// Pipeline project dir + uv: defaults overrides, Info.plist `MNPipelineDir`/`MNUvPath`, `MN_PIPELINE_DIR`, then
+    /// a shared install (/Users/Shared/MeetingNotes/shared-install.json); see `PipelineLocator`.
+    public static var pipelineLocation: PipelineLocation? {
+        PipelineLocator.resolve(
+            pipelineOverride: defaults.string(forKey: Key.pipelineDir),
+            pipelineInfo: AppInfo.info["MNPipelineDir"] as? String,
+            pipelineEnv: ProcessInfo.processInfo.environment["MN_PIPELINE_DIR"],
+            uvOverride: defaults.string(forKey: Key.uvPath),
+            uvInfo: AppInfo.info["MNUvPath"] as? String,
+            readFile: { FileManager.default.contents(atPath: $0) })
     }
 
-    /// uv binary: defaults override, then Info.plist `MNUvPath`, then Homebrew.
-    public static var uvPath: String {
-        nonEmpty(defaults.string(forKey: Key.uvPath))
-            ?? nonEmpty(AppInfo.info["MNUvPath"] as? String)
-            ?? "/opt/homebrew/bin/uv"
-    }
+    public static var pipelineDir: String? { pipelineLocation?.pipelineDir }
+
+    /// uv binary (see `pipelineLocation`); Homebrew's when nothing is configured.
+    public static var uvPath: String { pipelineLocation?.uvPath ?? PipelineLocator.defaultUvPath }
 
     private static func nonEmpty(_ value: String?) -> String? {
         guard let value, !value.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
