@@ -50,6 +50,7 @@ macOS 15 asks periodically to re-confirm screen/audio access and shows a purple 
 ## Usage
 
 - **Start / stop:** ⌃⌥⌘R, the floating pill, Dock icon menu, or menu bar icon. **Pause / resume:** ⌃⌥⌘P. Nothing records without a user action; meeting detection only offers to start.
+- **Opens itself for meetings:** a tiny background agent (`MeetingNotesLauncher`, ~3 MB, per account) opens the app when Zoom, Teams, Webex or FaceTime launches or a meeting app (incl. browser Meet) starts using the default mic while the app is not running; the app then asks to record. Quit does not stop it; Settings › Advanced › Open the app when a meeting starts does (on by default; macOS lists it under Login Items › Allow in the Background).
 - **Scripting:** `open meetingnotes://start` (also stop, pause, resume, toggle, show) or `meeting-notes ctl start|stop|pause|resume|toggle|show|status`.
 - **Notes** land in `~/MeetingNotes/<YYYY-MM-DD HHmm> <title>/`: `notes.md` (summary, decisions, action items, transcript), `transcript.json`, `mic.m4a` / `system.m4a` / `mixed.m4a`, `meeting.json`, `status.json`, `pipeline.log`. Audio is kept on errors.
 - **CLI** (run from `pipeline/`):
