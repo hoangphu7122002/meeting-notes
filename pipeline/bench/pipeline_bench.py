@@ -2,7 +2,7 @@
 
   uv run python bench/pipeline_bench.py make <dir> [--minutes 12] [--remote 2] [--local 1] [--bleed] [--seed 0]
   uv run python bench/pipeline_bench.py run <dir> [--label NAME] [--set key=value ...] [--repeat 3]
-                                        [--with-summary] [--wait-normal 600] [--allow-warn] [--keep]
+                                        [--with-summary] [--wait-normal 600] [--allow-warn] [--keep] [--jobs 1]
   uv run python bench/pipeline_bench.py report <dir>
 
 `make` writes a synthetic fixture (bench/meeting_fixture.py). `run` copies <dir>/meeting to a scratch folder and
@@ -12,6 +12,9 @@ read; rename_folder is off). Summaries are skipped unless --with-summary (they n
 Each run appends one JSON line to <dir>/results.jsonl: stage timings, wall time, peak RSS, MLX peak, swap
 used before/after, vm_stat page-ins/outs delta, memory pressure sampled every second (start / best / worst,
 seconds per level), Ollama models resident, AC/battery, diarization methods and WER / DER vs reference.json.
+
+--jobs N processes N copies one after another in one process with one shared model cache, as the app's worker does
+for queued meetings, so `--set keep_models_warm=auto|false|true` can be compared (per-job wall in "job_walls").
 
 Memory pressure: a run waits up to --wait-normal seconds for "normal"; then it fails, or with --allow-warn runs
 anyway and is labelled with the worst level seen ("condition"). Never point it at ~/MeetingNotes.
@@ -125,22 +128,47 @@ def wait_for_normal(timeout: float) -> int:
 # ------------------------------------------------------------ one run
 
 
-def child(folder: str) -> None:
-    """Fresh process: run the pipeline on `folder`, print one JSON line (exit, wall, peak RSS, MLX peak)."""
+def child(folder: str, jobs: int = 1) -> None:
+    """Fresh process: run the pipeline on `folder`, print one JSON line (exit, wall, peak RSS, MLX peak).
+
+    jobs > 1: process `folder` and its copies `folder-2..N` one after another in this process with one shared
+    model cache built from `keep_models_warm`, as the app's worker does for queued meetings."""
     import contextlib
     import resource
 
     from meeting_notes.entrypoints.cli import main
 
     t0 = time.monotonic()
+    walls = []
     with open(Path(folder) / "bench.stdout.log", "w") as log, contextlib.redirect_stdout(log):
-        code = main(["process", folder])
+        if jobs == 1:
+            code = main(["process", folder])
+        else:
+            code = queued_jobs([folder] + [f"{folder}-{i}" for i in range(2, jobs + 1)], walls)
     wall = time.monotonic() - t0
     mlx_peak = None
     if "mlx.core" in sys.modules:
         mlx_peak = round(sys.modules["mlx.core"].get_peak_memory() / 2**30, 3)
-    print(json.dumps({"exit": code, "wall_sec": round(wall, 1), "mlx_peak_gb": mlx_peak,
+    print(json.dumps({"exit": code, "wall_sec": round(wall, 1), "mlx_peak_gb": mlx_peak, "job_walls": walls,
                       "peak_rss_gb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**30, 3)}))
+
+
+def queued_jobs(folders: list[str], walls: list[float]) -> int:
+    """Worker-style queue: one Models(keep=keep_models_warm) shared by every job; per-job wall time into `walls`."""
+    from meeting_notes.adapters.outbound.system_resources import apply_priority, limit_threads
+    from meeting_notes.config import Config
+    from meeting_notes.entrypoints.wiring import make_models, make_processor, make_reporter
+
+    cfg = Config.load()
+    limit_threads(cfg.cpu_threads)
+    apply_priority(cfg.priority)
+    models = make_models(cfg, cfg.keep_models_warm)
+    for folder in folders:
+        t = time.monotonic()
+        make_processor(Path(folder), cfg, make_reporter(), models).run(None)
+        walls.append(round(time.monotonic() - t, 1))
+    models.release()
+    return 0
 
 
 def quality(folder: Path, reference: dict) -> dict:
@@ -160,11 +188,14 @@ def run_once(fixture: Path, label: str, settings: dict, index: int, args) -> dic
     shutil.rmtree(scratch, ignore_errors=True)
     folder = scratch / "meeting"
     shutil.copytree(fixture / "meeting", folder)
+    for i in range(2, args.jobs + 1):
+        shutil.copytree(fixture / "meeting", scratch / f"meeting-{i}")
     config = {"notes_dir": str(scratch), "rename_folder": False, **settings}
     (scratch / "config.toml").write_text(toml_text(config))
     if not args.with_summary:
-        (folder / ".work").mkdir(exist_ok=True)
-        (folder / ".work" / "summary.json").write_text(json.dumps(STUB_SUMMARY))
+        for f in [folder] + [scratch / f"meeting-{i}" for i in range(2, args.jobs + 1)]:
+            (f / ".work").mkdir(exist_ok=True)
+            (f / ".work" / "summary.json").write_text(json.dumps(STUB_SUMMARY))
 
     level = wait_for_normal(args.wait_normal)
     if level not in (0, 1) and not args.allow_warn:
@@ -173,7 +204,8 @@ def run_once(fixture: Path, label: str, settings: dict, index: int, args) -> dic
     sampler = PressureSampler()
     sampler.start()
     env = {**os.environ, "MEETING_NOTES_CONFIG": str(scratch / "config.toml")}
-    proc = subprocess.run(["taskpolicy", "-c", "utility", sys.executable, __file__, "child", str(folder)],
+    proc = subprocess.run(["taskpolicy", "-c", "utility", sys.executable, __file__, "child", str(folder),
+                           "--jobs", str(args.jobs)],
                           capture_output=True, text=True, env=env)
     pressure = pressure_summary(sampler.stop())
     after = snapshot()
@@ -188,7 +220,9 @@ def run_once(fixture: Path, label: str, settings: dict, index: int, args) -> dic
     row = {
         "label": label, "fixture": fixture.name, "run": index, "settings": settings,
         "started_at": datetime.now().isoformat(timespec="seconds"), "state": status.get("state"),
-        "exit": result["exit"], "wall_sec": result["wall_sec"],
+        "exit": result["exit"], "wall_sec": result["wall_sec"], "jobs": args.jobs, "job_walls": result.get("job_walls"),
+        "job_stages": [{k: round(v, 1) for k, v in (json.loads((f / "status.json").read_text()).get("timings") or {}).items()}
+                       for f in [scratch / f"meeting-{i}" for i in range(2, args.jobs + 1)]],
         "stages": {k: round(v, 1) for k, v in (status.get("timings") or {}).items()},
         "audio_min": round(reference["duration_sec"] / 60, 1),
         "peak_rss_gb": result["peak_rss_gb"], "peak_mlx_gb": result["mlx_peak_gb"],
@@ -235,6 +269,7 @@ def main() -> None:
     ap.add_argument("--label")
     ap.add_argument("--set", dest="sets", action="append", default=[])
     ap.add_argument("--repeat", type=int, default=1)
+    ap.add_argument("--jobs", type=int, default=1, help="queued jobs in one process sharing models (keep_models_warm)")
     ap.add_argument("--with-summary", action="store_true")
     ap.add_argument("--wait-normal", type=float, default=600.0)
     ap.add_argument("--allow-warn", action="store_true")
@@ -243,7 +278,7 @@ def main() -> None:
     path = Path(args.dir).expanduser()
     ensure_outside_user_notes(path)
     if args.cmd == "child":
-        child(str(path))
+        child(str(path), args.jobs)
     elif args.cmd == "make":
         from meeting_fixture import make_fixture
 

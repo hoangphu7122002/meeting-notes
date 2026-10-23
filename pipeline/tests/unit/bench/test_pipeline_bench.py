@@ -119,3 +119,36 @@ def test_settings_overrides_are_toml_typed():
     assert sets == {"mic_voice_check": False, "cpu_threads": 4, "me_name": "Phu"}
     assert toml_text(sets) == 'mic_voice_check = false\ncpu_threads = 4\nme_name = "Phu"\n'
 
+
+
+def test_queued_jobs_share_one_model_cache_built_from_keep_models_warm(monkeypatch):
+    import pipeline_bench
+
+    import meeting_notes.adapters.outbound.system_resources as res
+    import meeting_notes.entrypoints.wiring as wiring
+    from meeting_notes.config import Config
+
+    seen, released = [], []
+
+    class FakeModels:
+        def release(self):
+            released.append(True)
+
+    class FakeProcessor:
+        def __init__(self, folder, models):
+            self.folder, self.models = folder, models
+
+        def run(self, from_stage):
+            seen.append((self.folder.name, self.models))
+
+    monkeypatch.setattr(Config, "load", classmethod(lambda cls, path=None: Config(keep_models_warm=False)))
+    monkeypatch.setattr(res, "apply_priority", lambda mode: True)
+    monkeypatch.setattr(res, "limit_threads", lambda n: None)
+    keeps = []
+    monkeypatch.setattr(wiring, "make_models", lambda cfg, keep=False, log=print: keeps.append(keep) or FakeModels())
+    monkeypatch.setattr(wiring, "make_reporter", lambda **kw: None)
+    monkeypatch.setattr(wiring, "make_processor", lambda folder, cfg, rep, models: FakeProcessor(folder, models))
+    walls = []
+    assert pipeline_bench.queued_jobs(["/x/meeting", "/x/meeting-2"], walls) == 0
+    assert [name for name, _ in seen] == ["meeting", "meeting-2"] and seen[0][1] is seen[1][1]
+    assert keeps == [False] and len(walls) == 2 and released == [True]
