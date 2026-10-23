@@ -1,8 +1,8 @@
 # Optimization plan: speed after Stop, RAM, live transcription, one-click install
 
-Date: 2026-10-23. Status: **W1 in progress**: Phase 0 harness (0.1, 0.2a synthetic fixtures, 0.4 run labels)
-and 1.1 mic-track skip are built; baseline under "normal" pressure, real fixtures (0.2b), `diar_bench` (0.3) and the
-baseline report (0.5) are open. Results: section 7. Machine: M1 Pro, 16 GB, macOS 15.5, memory pressure
+Date: 2026-10-23. Status: **W1 done, W2 started**: Phase 0 harness (0.1, 0.2a synthetic fixtures, 0.4 run labels),
+1.1 mic-track skip, the long-block hallucination fix and 1.2 single encoder pass are built; baseline under "normal"
+pressure, real fixtures (0.2b), `diar_bench` (0.3), the baseline report (0.5) and 2.x are open. Results: section 7. Machine: M1 Pro, 16 GB, macOS 15.5, memory pressure
 usually "warn" with 16-20 GB swap. Inputs: [`native-backend.md`](../research/native-backend.md),
 [`diarization-alternatives.md`](../research/diarization-alternatives.md),
 [`one-click-install.md`](../research/one-click-install.md), [`live-polish.md`](../research/live-polish.md),
@@ -162,6 +162,14 @@ the time, with no new dependency and no install change. They also make every lat
 - **Acceptance:** `asr_bench` text identical (or WER within ±0.2 pp) at temperature 0 on all variants; language
   choice identical; transcribe stage ≥ 25 % faster on the 60 min synthetic; live chunk p50 decode < 1.2 s.
 - **Effort:** 2-3 days. **Decision:** none.
+- **Status (W2): built.** `Transcriber.transcribe_auto(audio, choose)` (new port method) encodes the first 30 s
+  window exactly as `mlx_whisper.transcribe` builds it, detects the language on those features, and decodes through
+  mlx-whisper's own `transcribe` with an `_EncodeOnce` model proxy that serves the precomputed features (checked
+  equal to the window) and encodes every other window once, so temperature fallbacks no longer re-encode either.
+  We did not fork the seek/fallback loop, so the old path needs no flag: decoding is identical by construction.
+  Blocks with several VAD spans still detect on all voiced audio (one extra pass); `split_by_language` sub-turn
+  detection is unchanged. Real-model A/B on 40 fixture blocks: language 40/40 and text 40/40 identical, decode
+  time -45 %. Measured: section 7.
 
 #### 1.3 Small items (only if Phase 0 shows they matter)
 
@@ -417,6 +425,33 @@ Mic voice check verdicts (no pipeline run): 2 min and 12 min single voice → on
   phrase filter (`domain/segments.py:is_hallucination`) misses it because the block is long and the text is longer
   than the phrase + 20 chars. Excluding that sentence on both sides, the skip path has fewer mic errors than today (167 vs 175 of
   1,028 words). Follow-up: reject segments whose word rate is impossible (> ~8 words/s) when they contain a known
-  phrase; re-measure before calling the WER guard met.
+  phrase; re-measure before calling the WER guard met. **Done in W2 (section 8): guard met.**
 - Transcribe +16 s: VAD gives more, shorter mic turns (75 vs 56) than pyannote, so more whisper calls; 1.2 (one
   encoder pass) attacks exactly this per-call floor.
+
+## 8. Measurements (W2: hallucination filter + 1.2 single encoder pass)
+
+Same machine and fixture (12 min, 1 local voice, 2 remote, `mic_voice_check` on = default), on battery (57 % ->
+34 %), pressure "warn" at every run (some started "normal"), swap ~17-19 GB, Ollama models not resident, summaries
+skipped, nice 10 + utility QoS, one job at a time. "before" = e372e15 (W1 head), "after" = c757776 (both changes),
+`--repeat 2` each, medians (repeats within 1 %):
+
+| | diarize | transcribe | wall | peak RSS | MLX peak | WER all (mic / system) | DER (c0 / c0.25) |
+|---|---|---|---|---|---|---|---|
+| before | 58.4 s | 186.4 s | 256.1 s | 1.51 GB | 1.25 GB | 7.49 % (13.72 % / 0.54 %) | 4.45 % / 0.33 % |
+| after | 59.3 s | 133.2 s (**-29 %**) | 203.9 s (**-20 %**) | 1.52 GB | 1.25 GB | 6.41 % (11.67 % / 0.54 %) | 4.45 % / 0.33 % |
+
+- Transcript diff before -> after: exactly one segment removed, the 0.37 s / 21-word outro ("Cảm ơn các bạn đã theo
+  dõi và ủng hộ cho kênh lalaschool Để không bỏ lỡ những video hấp dẫn"); every other segment's text, timing and
+  language is identical (encoder reuse changes no output). With it gone the mic-skip path beats W1's full path on
+  WER (6.41 % vs 6.88 % all, 11.67 % vs 12.55 % mic), so the 1.1 WER guard is met.
+- Filter (`domain/hallucination.py`): known vi/en phrases match ignoring case, punctuation and spaces
+  ("lalaschool", "amara.org" never matched before); a segment with a phrase is dropped when it is little more than
+  the phrase, the block is < 8 s, phrases cover >= 50 % of its letters, or its words exceed 8 per second of
+  whisper's raw segment time; long one-word loops are dropped; without a phrase only > 15 words/s in < 1 s from an
+  unsure window (avg logprob < -0.8 or no-speech > 0.5). Unit tests hold real speech that contains the phrases.
+- 1.2 acceptance: text identical (pass), language identical (pass), transcribe >= 25 % faster (pass, -29 % on
+  12 min; 60 min not run: battery). Live chunk p50 not re-measured.
+- Diarize did not change (no code change there). A first "before" pair run from a bare git worktree fell back to
+  clustering (no `.env`/`models` there; diarize 12 s, DER 4.1 %) and was discarded (`w2-before-nopyannote-invalid`
+  in results.jsonl).
