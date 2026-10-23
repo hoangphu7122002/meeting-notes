@@ -7,12 +7,12 @@ transcribes, labels speakers and summarizes on the Mac. User docs: [`README.md`]
 
 1. **Local only.** No cloud APIs. Network is for model weights (Hugging Face incl. the ungated FluidAudio weights, Ollama registry), the optional HF gated-model access check, and `scripts/install.sh` installing tools (Homebrew packages, uv/PyPI wheels, the official Homebrew installer only when Homebrew is missing).
 2. **Summaries use local Ollama only** (`ollama_url`, default `127.0.0.1:11434`). Never Claude/OpenAI or any cloud LLM, for summaries or any pipeline step.
-3. **Secrets never printed or committed.** `HF_TOKEN` (optional: only the pyannote fallback uses it) lives only in the gitignored root `.env`; error text goes through `redact()`; the FluidAudio helper never receives it.
+3. **Secrets never printed or committed.** `HF_TOKEN` (optional: only the pyannote fallback uses it) lives only in the gitignored root `.env` or the per-account `~/.config/meeting-notes/.env` (never in a shared install's directory); error text goes through `redact()`; the FluidAudio helper never receives it.
 4. **Do not touch other projects.** Never start, stop or reset anything on port 55322 (banhloc Supabase DB) or other repos' stacks; stop processes by PID only.
 5. **App-to-pipeline contract is frozen** unless both sides change in one commit with tests (see Contracts).
-6. **Config keys and env names are public API:** `config.toml` keys, `MEETING_NOTES_*` (incl. `MEETING_NOTES_DIARIZE_CLI`, set by the app for its worker), `HF_TOKEN`, `MN_PIPELINE_DIR`, Info.plist `MNPipelineDir`/`MNUvPath`, UserDefaults keys under `com.hoangphu.meetingnotes`.
+6. **Config keys and env names are public API:** `config.toml` keys, `MEETING_NOTES_*` (incl. `MEETING_NOTES_DIARIZE_CLI`, set by the app for its worker), `HF_TOKEN`, `MN_PIPELINE_DIR`, Info.plist `MNPipelineDir`/`MNUvPath`, UserDefaults keys under `com.hoangphu.meetingnotes`, the shared-install marker `shared-install.json` (`pipeline_dir`, `uv_path`, `hf_hub_cache`, `app`) and its default root `/Users/Shared/MeetingNotes`.
 7. **Do not move `pipeline/`, `models/` or `.env`:** the installed app and configs point at them.
-8. **Build the app only with `scripts/build-app.sh`** (stable local signing identity keeps mic/screen permissions; it bundles and signs the `MeetingNotesDiarize` helper); bundle id `com.hoangphu.meetingnotes`; ad-hoc signing only when asked. Never quit a recording MeetingNotes: `build-app.sh` and `install.sh` refuse unless `--force`; agents never pass `--force` and never run `make install` / `make build-app` end to end without the user (use `scripts/install.sh --dry-run`).
+8. **Build the app only with `scripts/build-app.sh`** (stable local signing identity keeps mic/screen permissions; it bundles and signs the `MeetingNotesDiarize` helper); bundle id `com.hoangphu.meetingnotes`; ad-hoc signing only when asked. Never quit a recording MeetingNotes: `build-app.sh` and `install.sh` refuse unless `--force`; agents never pass `--force` and never run `make install` / `make install-shared` / `make build-app` end to end without the user (use `scripts/install.sh [--shared] --dry-run`). Never run sudo from scripts (print the command).
 9. **Never record without a user action.** Meeting detection only offers. The worker is spawned on demand, never at launch or while recording unless the user enabled live transcription (Settings › Recording › Live transcript while recording, default off); heavy ML imports stay lazy.
 10. **English for code, comments, docs.** UI copy lives in `L10n.swift` (Vietnamese default, English). Never commit `build/`, `app/.build`, `models/`, `.venv`, recordings.
 
@@ -36,7 +36,7 @@ pipeline/src/meeting_notes/
   adapters/inbound/      commands.py (CLI handlers), worker.py (JSON-lines worker)
   entrypoints/           cli.py (argparse main), wiring.py (dependency factory)
 pipeline/tests/          unit/{domain,application,adapters} architecture/ e2e/ · pipeline/bench/ (pipeline harness + long fixtures, diarization-only bench, asr, summary, live benches) · pipeline/scripts/ (model converter)
-scripts/                 install.sh (one pass, --dry-run) build-app.sh app-state.sh setup-signing.sh check-swift-arch.sh
+scripts/                 install.sh (one pass, --dry-run, --shared via install-shared.sh) user-setup.sh (per-account step of a shared install) shared/ build-app.sh app-state.sh setup-signing.sh check-swift-arch.sh
 docs/  models/  build/   research + screenshots; model weights (ignored); app bundle output (ignored)
 ```
 
@@ -51,14 +51,16 @@ docs/  models/  build/   research + screenshots; model weights (ignored); app bu
 - **Worker protocol** (`meeting-notes worker`, spawned by `WorkerClient.swift`): stdin JSON lines `{"cmd":"process","job","folder","from","force"}`, `warmup`, `cancel`, `release`, `ping`, `quit`; stdout events (`{"event":"worker",...}`, pipeline events tagged with `job`, `{"event":"job_end","exit":0|1|2|3}`). Python: `adapters/outbound/progress_reporter.py` + `adapters/inbound/worker.py`; Swift: `WorkerEvent.swift`, `LiveEvents.swift`.
 - **Live transcription** (opt-in): `ready` carries `"features":["live"]`; stdin `{"cmd":"live","job":"live-<id>","folder"}` runs a long job in the serial loop until `{"cmd":"live_stop","job"}` (also implied by `process`, `quit`, EOF); stdout `{"event":"live_segment","job","track":"mic|system","speaker":"Me|Others","seq","start","end","language","text"}` (one per decoded chunk, re-sent on resume; dedupe by `(track, seq)`) and `{"event":"live_status","job","state":"running|deferred|throttled|stopped","backlog_sec","skipped_sec","rtf","reason"}`, then `job_end`. Jobs with the `live-` prefix are routed to `LiveTranscriber.swift`, others to `JobQueue.swift`; `JobQueue` never starts a process job while recording. The live job tails the WAVs (capture code is unaware of it), keeps whisper loaded for the Stop-time job, and writes only `.work/transcript.partial.jsonl`; `process` reuses a chunk only under the strict rule (natural pause, one speaker, no ambiguous segment), so notes equal the offline path. Design and tests: `docs/research/realtime.md`, `realtime-feasibility.md`.
 - **Meeting folder** `~/MeetingNotes/<date> <title>/`: `meeting.json` (app writes), `status.json`, `transcript.json`, `.work/`, `notes.md`, `pipeline.log` (pipeline writes; `.work/transcript.partial.jsonl` = live partials, removed at finalize), `pipeline.app.log` (app writes), `mic.m4a` `system.m4a` `mixed.m4a`.
+- **Shared install:** `/Users/Shared/MeetingNotes/{pipeline,python,bin,models}` + `shared-install.json`, owner-writable, world-readable. App: `PipelineLocator` (Core) resolves it and runs the worker with `UV_NO_SYNC=1 UV_FROZEN=1`; pipeline: `config/install.py` sets `HF_HUB_CACHE` (offline when not writable). Per account: recordings, config, `.env`, logs, TCC, Launch at Login.
 - **App state:** `~/Library/Application Support/MeetingNotes/state.json`; control via `meetingnotes://` URLs or `meeting-notes ctl`.
-- **Diarization helper:** `MeetingNotesDiarize <wav> --models DIR` prints one JSON line `{segments: [{start, end, speaker}], ...}`; `--prepare` downloads/compiles the models with `progress <fraction> <phase>` lines on stderr. Lookup: `fluidaudio_cli` (override) → `MEETING_NOTES_DIARIZE_CLI` (app) → `~/Applications`, `/Applications` bundles → `app/.build` → PATH. Fallback: helper missing or failing → pyannote (HF_TOKEN) → ungated clustering → VAD; `.work/diarization.json` and `transcript.json` record `engine` (what ran).
+- **Diarization helper:** `MeetingNotesDiarize <wav> --models DIR` prints one JSON line `{segments: [{start, end, speaker}], ...}`; `--prepare` downloads/compiles the models with `progress <fraction> <phase>` lines on stderr. Lookup: `fluidaudio_cli` (override) → `MEETING_NOTES_DIARIZE_CLI` (app) → `~/Applications`, `/Applications`, shared-install `app` bundles → `app/.build` → PATH. Fallback: helper missing or failing → pyannote (HF_TOKEN) → ungated clustering → VAD; `.work/diarization.json` and `transcript.json` record `engine` (what ran).
 
 ## Commands
 
 ```bash
 make help        # list targets
 make install     # one pass, idempotent: prerequisites, uv sync, models, build and install the app (ARGS=--dry-run)
+make install-shared  # same for every account: /Applications + /Users/Shared/MeetingNotes (read-only store; docs/research/one-click-install.md)
 make deps        # uv sync + swift package resolve
 make dev         # deps + swift build + doctor --offline (never launches the app)
 make lint        # lint-arch + app build

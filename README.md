@@ -19,12 +19,14 @@ make build-app    # rebuild only the app; quits an idle MeetingNotes first (neve
 uv run --project pipeline meeting-notes doctor   # check ffmpeg, Ollama, models, diarization helper
 ```
 
+**Several macOS accounts on one Mac:** `make install-shared` (`ARGS=--dry-run` first) installs the app to `/Applications` and the pipeline + models once in `/Users/Shared/MeetingNotes` (read-only for other accounts); each other account then runs `/Users/Shared/MeetingNotes/bin/meeting-notes-user-setup --open` and grants its own permissions. Recordings, config and permissions stay per account. Details: [one-click-install § Shared install](docs/research/one-click-install.md#shared-install-several-macos-accounts).
+
 The app is signed with a stable local certificate (`scripts/setup-signing.sh`), so Microphone and Screen & System Audio permissions survive rebuilds. Build only via `make build-app` / `scripts/build-app.sh`.
 
 ### Speaker diarization
 
 - **FluidAudio** (default, no token): [FluidAudio](https://github.com/FluidInference/FluidAudio)'s Core ML port of pyannote community-1 on the Neural Engine, via the `MeetingNotesDiarize` helper bundled in the app. Its ~21 MB of weights (CC-BY-4.0: pyannote, WeSpeaker, BUT Speech@FIT, converted by Fluid Inference) download on first use (`make install` prefetches them).
-- **Fallback:** if the helper is missing or fails, pyannote runs (needs `HF_TOKEN` in the gitignored root `.env` and accepted terms for `pyannote/speaker-diarization-community-1`), else voice clustering, then Me / Others. Diarization never fails the run. The engine used is saved in `transcript.json` (`diarization.engine`, `diarization.methods`).
+- **Fallback:** if the helper is missing or fails, pyannote runs (needs `HF_TOKEN` in the gitignored root `.env` or `~/.config/meeting-notes/.env` and accepted terms for `pyannote/speaker-diarization-community-1`), else voice clustering, then Me / Others. Diarization never fails the run. The engine used is saved in `transcript.json` (`diarization.engine`, `diarization.methods`).
 - **Other engines:** `diarization_engine = "pyannote"` or `"sherpa-onnx"` (`cd pipeline && uv sync --extra sherpa`). Details: [diarization-alternatives](docs/research/diarization-alternatives.md).
 
 ## First run

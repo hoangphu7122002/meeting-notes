@@ -14,6 +14,68 @@ installs the app, runs `doctor` and prints the permission steps. Idempotent; `--
 MeetingNotes is never quit unless `--force`. A new user now does: Xcode CLT, `git clone`, `make install`, 2
 permissions. The no-terminal dmg path (option B, sections 5-6) is still open.
 
+## Shared install (several macOS accounts)
+
+Implemented 2026-10-23: `make install-shared` = `scripts/install.sh --shared` (logic in `scripts/install-shared.sh`,
+`--dry-run` supported). Goal: one Mac, several accounts (e.g. `hoangphu` and `phu_strata`), one copy of the software
+and models, everything private stays per account.
+
+| What | Where | Who writes |
+|---|---|---|
+| App (+ bundled `MeetingNotesDiarize`) | `/Applications/MeetingNotes.app`; `/Users/Shared/MeetingNotes/MeetingNotes.app` when the installing account cannot write `/Applications` (not admin) | installing account |
+| Pipeline source, `.venv` (uv-managed Python 3.12 in `python/`), `bin/uv` | `/Users/Shared/MeetingNotes/{pipeline,python,bin}` | installing account; others read only |
+| Models: whisper + embeddings (HF hub cache), FluidAudio | `/Users/Shared/MeetingNotes/models/{huggingface/hub,fluidaudio}` | installing account; others read only |
+| Marker | `/Users/Shared/MeetingNotes/shared-install.json` (`pipeline_dir`, `uv_path`, `hf_hub_cache`, `app`) | installer |
+| Recordings, `config.toml`, `.env` (HF_TOKEN), logs, `state.json`, uv/MLX/Core ML caches, TCC grants, Launch at Login | each account's home (`~/MeetingNotes`, `~/.config/meeting-notes`, `~/Library`) | that account |
+
+How it resolves:
+- **App** (`PipelineLocator`, Core, tested): defaults override, Info.plist `MNPipelineDir` (baked to the shared
+  pipeline by `build-app.sh --pipeline-dir`), `MN_PIPELINE_DIR`, then `/Users/Shared/MeetingNotes/shared-install.json`.
+  When the marker sits next to the pipeline dir, the app uses the shared `bin/uv` (never a uv in someone's home) and
+  starts the worker with `UV_NO_SYNC=1 UV_FROZEN=1 UV_PYTHON_DOWNLOADS=never`: `uv run` on a read-only project
+  otherwise tries to re-sync and fails (verified: exit 2, permission denied; with the flags it runs from a fresh HOME).
+- **Pipeline** (`config/install.py`): the CLI sets `HF_HUB_CACHE` to the shared hub before any HF import and
+  `HF_HUB_OFFLINE=1` when this account cannot write it (verified: offline loads from a read-only cache, no lock files).
+  FluidAudio models are `<root>/models/fluidaudio` as before (loading compiled models writes nothing).
+  `hf_token()` reads the environment, then `~/.config/meeting-notes/.env`, and the repo `.env` only in a dev install;
+  the installer refuses a `.env` inside the shared root and copies only the `HF_TOKEN` line of the repo `.env` to the
+  installing account's `~/.config/meeting-notes/.env` (mode 600, never printed).
+- **Safety**: the shared root must be owned by the installing account and not group/world-writable (`/Users/Shared`
+  itself is world-writable, so someone else could pre-create it); files are `chmod -R u+rwX,go+rX,go-w`. The script
+  never runs sudo; without admin rights it installs the app in the shared root and prints the `sudo ditto` command.
+  It refuses while another account runs the shared app or pipeline (it cannot and must not quit them; fast user
+  switching), never quits a recording app, and never moves a running per-user `~/Applications` copy.
+
+Steps:
+1. Installing (admin) account, once: `make install-shared ARGS=--dry-run`, then `make install-shared`. Open
+   `/Applications/MeetingNotes.app`; grants usually carry over (same signature and bundle id); re-enable Launch at
+   Login; move the old `~/Applications/MeetingNotes.app` to the Trash when asked (two copies confuse LaunchServices).
+2. Every other account, once, logged in as that account: `/Users/Shared/MeetingNotes/bin/meeting-notes-user-setup --open`
+   (creates `~/MeetingNotes` and `~/.config/meeting-notes`, runs `doctor --offline`, checks Ollama, prints the
+   steps), then allow Microphone and Screen & System Audio Recording. TCC grants are per account; no admin needed.
+3. Updates: re-run `make install-shared` from the installing account while the other accounts have quit the app.
+
+Ollama (summaries stay on 127.0.0.1, never a cloud LLM):
+
+| Option | Duplicate models | Setup | Trade-off |
+|---|---|---|---|
+| **A. One server (default)**: the installing account's Ollama (`brew services`, LaunchAgent) on `127.0.0.1:11434` serves every account | none | none for other accounts | Runs while that account is logged in (it keeps running under fast user switching). Another account's transcript text is processed in memory by a process of the installing account (loopback only; Ollama stores no prompts unless `OLLAMA_DEBUG`). If it is down, notes are written without a summary; Reprocess adds it later |
+| B. Per-account server on another port, models read from a shared store: move the installer's models to e.g. `/Users/Shared/MeetingNotes/ollama` (`OLLAMA_MODELS`, read-only for others), others run `OLLAMA_HOST=127.0.0.1:11435 OLLAMA_MODELS=... OLLAMA_NOPRUNE=1 ollama serve` and set `ollama_url = "http://127.0.0.1:11435"` | none | per account | Strict process isolation; moving `~/.ollama/models` (7 GB today) and keeping both servers configured is manual |
+| C. Per-account server with its own models (`ollama_url` on another port) | qwen3:4b, 2.5 GB per account | per account | Simplest isolation, costs disk; two servers cannot share port 11434 |
+
+A is the default because it needs nothing and duplicates nothing; the two accounts belong to the same person. Use B or C
+when accounts belong to different people.
+
+Concurrent use (fast user switching): no shared writable state at run time. Each account has its own app process,
+worker, `state.json`, TMPDIR (`/var/folders/...`), uv cache, MLX and Core ML caches; the shared store is read-only for
+non-owners and offline. Risks: two loaded whisper models (~1-2 GB each) plus Ollama on 16 GB; macOS may not deliver
+microphone or system audio to an account that is switched out, so check a recording made in a background session
+before relying on it.
+
+Disk: a second per-user install would cost ~4.4 GB (venv 1.4 GB, whisper 0.46 GB, embeddings + FluidAudio 0.05 GB,
+qwen3:4b 2.5 GB). Shared: ~2 GB once (venv, Python ~0.1 GB, models; on APFS the venv is cloned from the uv cache) and
+~0 per extra account.
+
 ## 1. What a new user does today
 
 Source: `README.md`, `scripts/install.sh`, `scripts/build-app.sh`, `scripts/setup-signing.sh`, `meeting-notes setup` (`adapters/inbound/commands.py`), app first run (`PermissionsCard`).
