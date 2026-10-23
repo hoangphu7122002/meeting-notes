@@ -59,7 +59,7 @@ shared_plan() {
   echo "  build    FluidAudio diarization + live caption helpers (swift build -c release --product ...)"
   if [[ "$SKIP_MODELS" -eq 0 ]]; then
     echo "  models   whisper + embeddings into $SHARED_HUB, FluidAudio into $SHARED_ROOT/models/fluidaudio;"
-    echo "           live caption model (WhisperKit, ~217 MB, no login) into $SHARED_ROOT/models/whisperkit;"
+    echo "           live caption model (WhisperKit small, ~486 MB, no login) into $SHARED_ROOT/models/whisperkit;"
     echo "           Ollama summary model in the running Ollama (shared by the accounts, see docs)"
   fi
   echo "  app      scripts/build-app.sh: build, sign and install $APP (pipeline: $SHARED_PIPELINE)"

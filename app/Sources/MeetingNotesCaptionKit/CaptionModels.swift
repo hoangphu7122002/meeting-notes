@@ -9,7 +9,7 @@ import Foundation
 ///     ready-<model>.json                             written by `--prepare` after a full download + first load
 public enum CaptionModels {
     /// Chosen by `docs/research/realtime-feasibility.md` section 11 (quality vs latency/RAM on M1 Pro).
-    public static let defaultModel = "openai_whisper-small_216MB"
+    public static let defaultModel = "openai_whisper-small"
     public static let candidates = ["openai_whisper-tiny", "openai_whisper-base", "openai_whisper-small",
                                     "openai_whisper-small_216MB", "openai_whisper-large-v3-v20240930_turbo_632MB"]
     public static let repo = "argmaxinc/whisperkit-coreml"

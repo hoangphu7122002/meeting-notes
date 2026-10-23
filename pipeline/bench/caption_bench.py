@@ -1,7 +1,7 @@
 """Live caption (design B) latency bench: stream a synthetic wav into the MeetingNotesCaptions helper in real time.
 
   uv run python bench/caption_bench.py <corpus_dir> --helper ../app/.build/release/MeetingNotesCaptions \
-      --models <whisperkit dir> [--model openai_whisper-small_216MB] [--speed 1.0] [--track system] [--out result.json]
+      --models <whisperkit dir> [--model openai_whisper-small] [--speed 1.0] [--track system] [--out result.json]
 
 `<corpus_dir>` is an `asr_bench.py make` corpus (corpus.wav + corpus.json with known text); never a real recording.
 The helper gets exactly the app's wire protocol (`CaptionWire.swift`): 100 ms `audio` lines paced at `speed` x real
@@ -166,7 +166,7 @@ def main() -> None:
     ap.add_argument("corpus", type=Path)
     ap.add_argument("--helper", required=True)
     ap.add_argument("--models", required=True)
-    ap.add_argument("--model", default="openai_whisper-small_216MB")
+    ap.add_argument("--model", default="openai_whisper-small")
     ap.add_argument("--speed", type=float, default=1.0)
     ap.add_argument("--track", default="system")
     ap.add_argument("--out", type=Path)
