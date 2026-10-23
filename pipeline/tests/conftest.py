@@ -3,6 +3,8 @@ import os
 
 os.environ["PYANNOTE_METRICS_ENABLED"] = "false"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+# Hermetic config: never read the developer's real app preferences (notes folder).
+os.environ["MEETING_NOTES_APP_PREFS"] = "/nonexistent/meeting-notes-test-prefs.plist"
 
 import numpy as np  # noqa: E402
 import pytest  # noqa: E402

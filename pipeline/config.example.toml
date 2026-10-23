@@ -1,7 +1,8 @@
 # Copy to ~/.config/meeting-notes/config.toml and edit. Every key is optional.
 
-# Where the app and `meeting-notes import` create meeting folders.
-# (The menu bar app has its own setting: `defaults write com.hoangphu.meetingnotes notesDir <path>`.)
+# Where `meeting-notes import` creates meeting folders when the app has no folder of its own.
+# The app's Settings › Where to save (UserDefaults `notesDir`) wins over this key, so the app, its worker and
+# `meeting-notes import` always use one folder; `MEETING_NOTES_DIR` still overrides both.
 notes_dir = "~/MeetingNotes"
 
 # Transcription: any mlx-whisper model (Hugging Face repo id or local path; a missing local path falls back
@@ -49,7 +50,7 @@ mic_voice_check = true
 
 # Summary (local Ollama).
 ollama_url = "http://127.0.0.1:11434"
-ollama_model = "qwen3:4b"   # "qwen3:8b": better, ~2x RAM
+ollama_model = "qwen3:4b"   # "qwen3:8b": better, ~2x RAM. The app's Settings › Summary quality overrides this key.
 ollama_num_ctx = 12288
 ollama_keep_alive = "1m"    # unload soon after the summary
 ollama_num_thread = 4

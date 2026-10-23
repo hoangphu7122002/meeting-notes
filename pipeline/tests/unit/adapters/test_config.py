@@ -40,3 +40,38 @@ def test_repo_root_has_pipeline_and_env_location():
 def test_config_field_names_are_the_public_keys():
     # config.toml keys are public API (README, config.example.toml, the app): renaming one breaks users.
     assert [f.name for f in fields(Config)] == FIELDS
+
+
+def _prefs(tmp_path, **values):
+    import plistlib
+
+    path = tmp_path / "prefs.plist"
+    path.write_bytes(plistlib.dumps(values, fmt=plistlib.FMT_BINARY))
+    return path
+
+
+def test_app_notes_folder_is_the_single_source(tmp_path, monkeypatch):
+    from meeting_notes.config import load_config
+
+    monkeypatch.delenv("MEETING_NOTES_DIR", raising=False)
+    toml = tmp_path / "config.toml"
+    toml.write_text('notes_dir = "~/FromToml"\n')
+    prefs = _prefs(tmp_path, notesDir="/Users/demo/Work notes", uiLanguage="vi")
+    assert load_config(toml, app_prefs=prefs).notes_dir == "/Users/demo/Work notes"
+    # The app removes the key when it uses its default: config.toml (or the default) applies.
+    assert load_config(toml, app_prefs=_prefs(tmp_path, uiLanguage="en")).notes_dir == "~/FromToml"
+    assert load_config(toml, app_prefs=tmp_path / "missing.plist").notes_dir == "~/FromToml"
+    # The environment (set by the app for its worker) still wins.
+    monkeypatch.setenv("MEETING_NOTES_DIR", "/env/notes")
+    assert load_config(toml, app_prefs=prefs).notes_dir == "/env/notes"
+
+
+def test_unreadable_app_prefs_are_ignored(tmp_path, monkeypatch):
+    from meeting_notes.config.loader import app_notes_dir
+
+    broken = tmp_path / "broken.plist"
+    broken.write_bytes(b"not a plist")
+    assert app_notes_dir(broken) is None
+    assert app_notes_dir(_prefs(tmp_path, notesDir="   ")) is None
+    monkeypatch.setenv("MEETING_NOTES_APP_PREFS", str(_prefs(tmp_path, notesDir="~/X")))
+    assert app_notes_dir() == "~/X"

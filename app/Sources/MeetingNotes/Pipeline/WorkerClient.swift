@@ -90,6 +90,7 @@ final class WorkerClient {
         environment["PYTHONUNBUFFERED"] = "1"
         environment["MEETING_NOTES_PRIORITY"] = priority
         environment["MEETING_NOTES_OLLAMA_MODEL"] = model
+        environment["MEETING_NOTES_DIR"] = Settings.notesDir.path  // one notes folder for the app and the pipeline
         environment = PipelineLocator.workerEnvironment(environment, location: location)
         environment = DiarizeHelper.workerEnvironment(environment, executableURL: Bundle.main.executableURL) {
             fm.isExecutableFile(atPath: $0)
