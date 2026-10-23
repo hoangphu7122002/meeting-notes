@@ -32,6 +32,13 @@ mlx_cache_limit_mb = 256                   # MLX buffer cache cap while transcri
 diarization_models = ["pyannote/speaker-diarization-community-1", "pyannote/speaker-diarization-3.1"]
 cluster_threshold = 0.6     # fallback only: lower splits voices more eagerly
 diarization_device = "auto" # auto | mps | cpu
+# Diarization engine: "pyannote" (default) | "sherpa-onnx" (opt-in, experimental): ungated ONNX models on CPU
+# (pyannote segmentation-3.0, MIT + 3D-Speaker CAM++, Apache-2.0), no HF token for the full pass. Needs
+# `uv sync --extra sherpa` in pipeline/; models download on first use into models/sherpa-onnx/. If it is missing
+# or fails, pyannote runs instead. The mic single-voice check still uses the pyannote embedding model.
+diarization_engine = "pyannote"
+sherpa_embedding_model = "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced"
+sherpa_cluster_threshold = 0.5  # sherpa only: lower = more speakers
 me_name = "Me"
 mic_speakers = "auto"       # "me": everything on the microphone is you
 # Check with a few voice embeddings whether the microphone holds only your voice; if sure, skip full

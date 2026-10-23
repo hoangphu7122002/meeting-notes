@@ -43,6 +43,12 @@ class Config:
     embedding_model: str = "pyannote/wespeaker-voxceleb-resnet34-LM"
     cluster_threshold: float = 0.6  # cosine distance; lower = more speakers
     diarization_device: str = "auto"  # auto | mps | cpu
+    # Diarization engine: "pyannote" (default, above) | "sherpa-onnx" (opt-in, experimental: ungated ONNX models on
+    # CPU, no torch for the full pass; needs `uv sync --extra sherpa`; models are downloaded on first use into
+    # models/sherpa-onnx/). If sherpa-onnx is missing or fails, the pyannote path runs instead (noted).
+    diarization_engine: str = "pyannote"
+    sherpa_embedding_model: str = "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced"
+    sherpa_cluster_threshold: float = 0.5  # sherpa fast clustering; lower = more speakers
     me_name: str = "Me"
     # "auto": several distinct voices on the mic (in-person meeting) get their own labels.
     # "me": everything on the mic track is the user.

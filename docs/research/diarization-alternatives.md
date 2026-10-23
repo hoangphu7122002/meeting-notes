@@ -67,6 +67,25 @@ Notes on numbers: collars, overlap scoring and reference labels differ across so
 5. Use `pyannote.metrics` (already a dependency) for scoring.
 6. Acceptance: ungated engine within +3 absolute DER of community-1 on corpora (a) and (c) and correct speaker count in at least 80% of files; otherwise keep it as fallback tier only.
 
+## 6. sherpa-onnx adapter: models, licenses, attribution
+
+Built as an opt-in engine (`diarization_engine = "sherpa-onnx"`, `adapters/outbound/sherpa_diarizer.py`,
+`sherpa_models.py`; `uv sync --extra sherpa`). Files are fetched on first use from the sherpa-onnx GitHub release
+assets (plain HTTPS, 302 to a CDN, no login or token; checked 2026-10-23) into the gitignored `models/sherpa-onnx/`,
+and each download is sha256-pinned in `sherpa_models.py`.
+
+| Piece | File | License (verified 2026-10-23) | Attribution |
+|---|---|---|---|
+| Runtime | `sherpa-onnx` 1.13.8 + `sherpa-onnx-core` (bundles onnxruntime), PyPI wheels | Apache-2.0 (GitHub license API, PyPI metadata) | k2-fsa/sherpa-onnx |
+| Segmentation | `sherpa-onnx-pyannote-segmentation-3-0/model.onnx` (6 MB; tarball 7 MB) | MIT: LICENSE file in the tarball, "Copyright (c) 2022 CNRS"; HF card `pyannote/segmentation-3.0` license `mit` (the HF repo itself is gated, the ONNX export is not) | pyannote/segmentation-3.0 (Hervé Bredin, Alexis Plaquet, CNRS), converted by k2-fsa |
+| Embedding (default) | `3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx` (28 MB) | Apache-2.0 (ModelScope API, `iic/speech_campplus_sv_zh_en_16k-common_advanced`) | 3D-Speaker CAM++ (Alibaba Tongyi Lab), modelscope/3D-Speaker |
+| Embedding (option) | `3dspeaker_speech_campplus_sv_en_voxceleb_16k`, `3dspeaker_speech_eres2net_sv_en_voxceleb_16k` | Apache-2.0 (ModelScope) | 3D-Speaker |
+| Embedding (option) | `wespeaker_en_voxceleb_resnet34_LM` | CC-BY-4.0 (WeSpeaker pretrained models follow the VoxCeleb data license); same license as the pyannote wespeaker embedder already used | wenet-e2e/wespeaker |
+
+The release note of the embedding assets says "each model has its own license"; only the names above are
+accepted by `sherpa_embedding_model`. If the app ships these files, add the MIT notice (CNRS) and the Apache-2.0
+NOTICE lines to the app's third-party notices.
+
 ## Sources
 
 - pyannote community-1 card: https://huggingface.co/pyannote/speaker-diarization-community-1

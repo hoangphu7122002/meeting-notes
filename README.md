@@ -39,6 +39,12 @@ Until then the pipeline falls back automatically. It never fails because of diar
 
 The method used is recorded in `transcript.json` (`diarization.methods`) and noted in `notes.md`.
 
+**Optional engine without a token (experimental):** `diarization_engine = "sherpa-onnx"` runs the full pass with
+[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (pyannote segmentation-3.0 ONNX, MIT, (c) CNRS + 3D-Speaker CAM++
+embeddings, Apache-2.0) on the CPU. Install it with `cd pipeline && uv sync --extra sherpa`; the two model files
+(~34 MB) download from the sherpa-onnx GitHub releases on first use into `models/sherpa-onnx/` (sha256-checked, no
+login). Benchmarks and licenses: `docs/research/diarization-alternatives.md`.
+
 ## First run (permissions)
 
 1. Open `~/Applications/MeetingNotes.app`. The main window opens with a getting-started note and the permission checklist (Fix buttons and a 5 s live Me/Them test). Notifications are optional ("Notes ready"). The window opens again from the Dock icon, `open -a MeetingNotes`, `open meetingnotes://show` or the menus (Open MeetingNotes).

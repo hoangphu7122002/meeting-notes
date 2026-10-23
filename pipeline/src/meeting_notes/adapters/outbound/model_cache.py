@@ -32,7 +32,8 @@ class Models:
         self.last_used = time.monotonic()
 
     def _signature(self, cfg: Config) -> tuple:
-        return (cfg.whisper_model, tuple(cfg.diarization_models), cfg.embedding_model, cfg.diarization_device)
+        return (cfg.whisper_model, tuple(cfg.diarization_models), cfg.embedding_model, cfg.diarization_device,
+                cfg.diarization_engine, cfg.sherpa_embedding_model, cfg.sherpa_cluster_threshold)
 
     def update_config(self, cfg: Config) -> None:
         if self._signature(cfg) != self._signature(self.cfg):
@@ -66,12 +67,10 @@ class Models:
         return True
 
     def diarizer(self):
-        from .pyannote_diarizer import Diarizer
-
         if self._transcriber is not None and not self.keep_now():
             self._drop_transcriber()  # one heavy model at a time unless memory is plentiful
         if self._diarizer is None:
-            self._diarizer = Diarizer(self.cfg, log=self.log)
+            self._diarizer = make_diarizer(self.cfg, self.log)
         self._diarizer.cfg = self.cfg
         self.last_used = time.monotonic()
         return self._diarizer
@@ -118,8 +117,9 @@ class Models:
         timings = {}
         t = time.monotonic()
         d = self.diarizer()
-        pipe = d.pipeline()
-        if pipe is None:
+        if hasattr(d, "engine"):  # sherpa-onnx: the full pass needs no torch model
+            d.engine()
+        elif d.pipeline() is None:
             d.embedder()
         silence = np.zeros(16000 * 2, dtype=np.float32)
         silence[8000:24000] = 0.01 * np.sin(np.arange(16000) / 5.0)
@@ -138,6 +138,17 @@ class Models:
     def release(self) -> None:
         self._drop_diarizer()
         self._drop_transcriber()
+
+
+def make_diarizer(cfg: Config, log: Callable[[str], None] = print):
+    """The diarizer for `diarization_engine`: "sherpa-onnx" (opt-in) or pyannote (default, also for unknown values)."""
+    if str(cfg.diarization_engine).strip().lower() in ("sherpa-onnx", "sherpa"):
+        from .sherpa_diarizer import SherpaDiarizer
+
+        return SherpaDiarizer(cfg, log=log)
+    from .pyannote_diarizer import Diarizer
+
+    return Diarizer(cfg, log=log)
 
 
 def _trim(model) -> None:

@@ -13,7 +13,7 @@ DEFAULT_TITLES = {"default", "app", "llm", ""}  # titles the pipeline may replac
 
 def describe_diarization(methods: list[str], notes: list[str]) -> str:
     joined = " ".join(methods)
-    if "pyannote" in joined:
+    if "pyannote" in joined or "sherpa-onnx" in joined:  # full diarization ran
         return ""
     if "clustering" in joined:
         return "speakers estimated by voice clustering (pyannote not available); labels may be imperfect"

@@ -31,10 +31,10 @@ pipeline/src/meeting_notes/
                          live_chunks / live_backlog / partial_merge (live transcription policy), voice_check (mic single-voice test)
   application/           use cases + ports.py (Protocols): process_meeting, summarize_meeting, transcribe_blocks, import_audio,
                          live_transcribe (live job), live_reuse (Stop-time reuse of live partials)
-  adapters/outbound/     one vendor or sink per file: ffmpeg, wav, meeting folder, pyannote, mlx, ollama, hf hub, progress
+  adapters/outbound/     one vendor or sink per file: ffmpeg, wav, meeting folder, pyannote, sherpa-onnx (opt-in), mlx, ollama, hf hub, progress
   adapters/inbound/      commands.py (CLI handlers), worker.py (JSON-lines worker)
   entrypoints/           cli.py (argparse main), wiring.py (dependency factory)
-pipeline/tests/          unit/{domain,application,adapters} architecture/ e2e/ · pipeline/bench/ (pipeline harness + long fixtures, asr, summary, live benches) · pipeline/scripts/ (model converter)
+pipeline/tests/          unit/{domain,application,adapters} architecture/ e2e/ · pipeline/bench/ (pipeline harness + long fixtures, diarization-only bench, asr, summary, live benches) · pipeline/scripts/ (model converter)
 scripts/                 install.sh build-app.sh setup-signing.sh check-swift-arch.sh
 docs/  models/  build/   research + screenshots; model weights (ignored); app bundle output (ignored)
 ```
@@ -42,7 +42,7 @@ docs/  models/  build/   research + screenshots; model weights (ignored); app bu
 ## Architecture rules
 
 `make lint-arch` = `pipeline/tests/architecture` (pytest AST scan) + `scripts/check-swift-arch.sh`.
-- Python: domain imports pure stdlib, numpy and scipy only (no config, no I/O). Application imports domain, config, numpy/scipy, light stdlib (`os`, `pathlib`, `time`, `traceback`) and its own ports; never adapters. `adapters/outbound` and `adapters/inbound` never import each other. Heavy libs (`mlx*`, `torch`, `pyannote`, `huggingface_hub`, `soundfile`) and I/O stdlib (`subprocess`, `urllib`, `shutil`, `ctypes`) live in `adapters/outbound`; `entrypoints/wiring.py` imports those adapters lazily, so the CLI starts without them (tested). Only `entrypoints/` wires adapters to use cases. Python source files stay <= 300 lines.
+- Python: domain imports pure stdlib, numpy and scipy only (no config, no I/O). Application imports domain, config, numpy/scipy, light stdlib (`os`, `pathlib`, `time`, `traceback`) and its own ports; never adapters. `adapters/outbound` and `adapters/inbound` never import each other. Heavy libs (`mlx*`, `torch`, `pyannote`, `sherpa_onnx`, `onnxruntime`, `huggingface_hub`, `soundfile`) and I/O stdlib (`subprocess`, `urllib`, `shutil`, `ctypes`) live in `adapters/outbound`; `entrypoints/wiring.py` imports those adapters lazily, so the CLI starts without them (tested). Only `entrypoints/` wires adapters to use cases. Python source files stay <= 300 lines.
 - Swift: Core imports no SwiftUI/AppKit/ScreenCaptureKit/CoreAudio/UserNotifications/ServiceManagement/IOKit. UI imports no capture or worker frameworks (ScreenCaptureKit, CoreAudio, UserNotifications, IOKit, AVFoundation). Previews import only Foundation/AppKit/SwiftUI/Core/UI. Source files stay <= 300 lines (except `L10n.swift`).
 
 ## Contracts

@@ -31,7 +31,7 @@ PURE_STDLIB = {"__future__", "re", "unicodedata", "math", "collections", "datacl
 # The application layer additionally orchestrates files and runs: paths, pid, timing, tracebacks.
 APPLICATION_STDLIB = PURE_STDLIB | {"os", "pathlib", "time", "traceback"}
 VALUE_LIBS = {"numpy", "scipy"}  # numeric value libraries: allowed in domain and application
-HEAVY_LIBS = {"mlx", "mlx_whisper", "torch", "pyannote", "huggingface_hub", "soundfile"}
+HEAVY_LIBS = {"mlx", "mlx_whisper", "torch", "pyannote", "huggingface_hub", "soundfile", "sherpa_onnx", "onnxruntime"}
 # Heavy model/audio libs that must never load at CLI import (numpy/scipy are value libs, checked separately).
 CLI_BANNED = HEAVY_LIBS | {"numpy", "scipy"}
 IO_STDLIB = {"subprocess", "urllib", "shutil", "ctypes"}
