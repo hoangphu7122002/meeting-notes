@@ -137,3 +137,13 @@ def test_cancel_marks_status(meeting, stubs, deps):
     with pytest.raises(Cancelled):
         Processor(meeting, Config(), Reporter(cancel=cancel), deps).run()
     assert json.loads((meeting / "status.json").read_text())["state"] == "cancelled"
+
+
+def test_summary_model_unloaded_at_job_start_unless_preloading(meeting, stubs, deps):
+    calls = []
+    deps.free_llm = lambda cfg: calls.append(cfg.ollama_model) or True
+    final = Processor(meeting, Config(ollama_preload=True), Reporter(json_mode=True), deps).run()
+    assert calls == []  # preload wants the model resident
+    final = Processor(final, Config(), Reporter(json_mode=True), deps).run("render")
+    assert calls == ["qwen3:4b"]
+    assert "unloaded qwen3:4b from Ollama (memory pressure)" in (final / "pipeline.log").read_text()

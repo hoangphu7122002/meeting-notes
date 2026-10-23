@@ -100,3 +100,23 @@ def preload(cfg: Config) -> threading.Thread:
     thread = threading.Thread(target=run, name="ollama-preload", daemon=True)
     thread.start()
     return thread
+
+
+def _resident(name: str, loaded: set[str]) -> bool:
+    return name in loaded or (":" not in name and f"{name}:latest" in loaded)
+
+
+def unload_if_resident(cfg: Config) -> bool:
+    """Unload **our** summary model (keep_alive 0) when Ollama holds it (/api/ps); other models are left alone.
+
+    True when an unload was sent. Never raises: an unreachable Ollama simply has nothing to unload."""
+    client = Ollama(cfg)
+    try:
+        with client._request("/api/ps", timeout=3) as resp:
+            loaded = {m.get("name") or m.get("model") or "" for m in json.load(resp).get("models", [])}
+        if not _resident(cfg.ollama_model, loaded):
+            return False
+        client._request("/api/generate", {"model": cfg.ollama_model, "keep_alive": 0}, timeout=30).read()
+        return True
+    except Exception:
+        return False

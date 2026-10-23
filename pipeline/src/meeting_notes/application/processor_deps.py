@@ -22,3 +22,6 @@ class ProcessorDeps:
     preload: Callable[[Config], object]  # start loading the summary model in the background
     transcribe_blocks: Callable[..., list] = transcribe_blocks
     partials: Callable[[Path], PartialTranscriptStore] | None = None  # live partials file -> store; None = no reuse
+    # At job start (unless ollama_preload): unload our summary model if Ollama holds it and memory pressure >= warn
+    # (True = unloaded). None = never.
+    free_llm: Callable[[Config], bool] | None = None

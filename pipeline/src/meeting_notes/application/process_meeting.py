@@ -62,6 +62,8 @@ class Processor:
         self.r.audio_sec = self._audio_duration()
         if self.cfg.ollama_preload and self._will_summarize():
             self.deps.preload(self.cfg)  # loads in parallel with diarization/transcription
+        elif self.deps.free_llm and self.deps.free_llm(self.cfg):  # our summary model must not compete with whisper/pyannote
+            self.r.log(f"unloaded {self.cfg.ollama_model} from Ollama (memory pressure)")
         stage = None
         try:
             for stage in STAGES:

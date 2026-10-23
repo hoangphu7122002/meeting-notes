@@ -50,6 +50,16 @@ def preload_llm(cfg: Config):
     return preload(cfg)
 
 
+def free_llm_under_pressure(cfg: Config) -> bool:
+    """Unload our summary model from Ollama when memory pressure is not "normal" (unknown counts as pressure)."""
+    from ..adapters.outbound.load_probe import memory_pressure_level
+    from ..adapters.outbound.ollama_client import unload_if_resident
+
+    if memory_pressure_level() == 1:
+        return False
+    return unload_if_resident(cfg)
+
+
 def processor_deps() -> ProcessorDeps:
     from ..adapters.outbound.audio_files import AudioFiles
     from ..adapters.outbound.meeting_folder import MeetingStore
@@ -58,7 +68,8 @@ def processor_deps() -> ProcessorDeps:
     from ..adapters.outbound.partial_transcript_store import PartialTranscriptFile
 
     return ProcessorDeps(store=MeetingStore(), audio=AudioFiles(), make_models=make_models,
-                         summarize=summarize, preload=preload_llm, partials=PartialTranscriptFile)
+                         summarize=summarize, preload=preload_llm, partials=PartialTranscriptFile,
+                         free_llm=free_llm_under_pressure)
 
 
 def make_processor(folder: Path, cfg: Config, reporter: ProgressReporter, models: ManagedModels | None = None) -> Processor:
