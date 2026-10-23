@@ -97,6 +97,8 @@ class Config:
     live_pause_sec: float = 0.7
     live_max_backlog_sec: float = 120.0
     live_on_battery: bool = False
+    # Memory pressure at which live pauses: "critical" (default; live keeps running under "warn") or "warn".
+    live_pause_pressure: str = "critical"
     # Live polish (display only, docs/research/live-polish.md): "off" (default) | "rules" = deterministic cleanup
     # of live text (sentence joins across chunks, casing, glossary spelling, decode loops, interjections like
     # "ờ"/"um", paragraph breaks). Raw partials and the Stop-time transcript are never changed. A paragraph ends

@@ -12,7 +12,7 @@ import time
 from collections import defaultdict
 
 from ..config import Config
-from ..domain.live_backlog import PROCESS, SKIP, BacklogPolicy, Decision, decide, status_of
+from ..domain.live_backlog import PROCESS, SKIP, BacklogPolicy, Decision, decide, pause_pressure_level, status_of
 from ..domain.live_chunks import ChunkPolicy, LiveChunk, TrackChunker, mic_is_bleed, worth_decoding
 from ..domain.live_polish import LivePolisher, PolishRules, glossary_terms
 from ..domain.partial_merge import PARTIAL_VERSION, config_signature, usable_partials
@@ -60,7 +60,8 @@ class LiveTranscription:
         self.source, self.store, self.models, self.probe, self.r, self.cfg = source, store, models, probe, reporter, cfg
         self.clock = clock
         self.policy = chunk_policy(cfg)
-        self.backlog_policy = BacklogPolicy(cfg.live_max_backlog_sec, cfg.live_on_battery)
+        self.backlog_policy = BacklogPolicy(cfg.live_max_backlog_sec, cfg.live_on_battery,
+                                     pause_pressure=pause_pressure_level(cfg.live_pause_pressure))
         self.signature = live_signature(cfg)
         self.polisher = make_polisher(cfg)
         self.speakers = {"mic": cfg.me_name}

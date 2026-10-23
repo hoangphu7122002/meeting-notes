@@ -81,7 +81,7 @@ Optional `~/.config/meeting-notes/config.toml` (or `MEETING_NOTES_CONFIG`). All 
 | `live_polish` | `"off"` | `"rules"` = display-only cleanup of the live transcript |
 | `priority` | `"low"` | `low` \| `background` \| `normal` |
 
-Live transcript (off by default; Settings › Advanced › Show text during the meeting): shows the last lines while you record and reuses them after Stop; notes are the same, only sooner. It adds ~1.2 GB RAM, pauses under memory pressure and on battery (`live_on_battery`), and never changes capture. Tuning keys: `live_*` in the example config. Design: [realtime](docs/research/realtime.md), [live-polish](docs/research/live-polish.md).
+Live transcript (off by default; Settings › Advanced › Show text during the meeting): shows the last lines while you record and reuses them after Stop; notes are the same, only sooner. It adds ~1.2 GB RAM, pauses at critical memory pressure (`live_pause_pressure`, `"warn"` pauses earlier) and on battery (`live_on_battery`), and never changes capture. Tuning keys: `live_*` in the example config. Design: [realtime](docs/research/realtime.md), [live-polish](docs/research/live-polish.md).
 
 Env overrides: `MEETING_NOTES_OLLAMA_MODEL`, `MEETING_NOTES_WHISPER_MODEL`, `MEETING_NOTES_DIR`, `MEETING_NOTES_CONFIG`. The app's notes folder (Settings › After meetings › Save to) overrides `notes_dir` in config.toml, so `meeting-notes import` uses the same folder. Model choice and benchmarks: [phowhisper-mlx](docs/research/phowhisper-mlx.md), [speed-memory](docs/research/speed-memory.md).
 

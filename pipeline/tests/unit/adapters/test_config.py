@@ -11,7 +11,7 @@ FIELDS = [
     "ollama_num_thread", "ollama_timeout_sec", "summary_chunk_chars", "summary_extract_chars", "summary_template",
     "summary_language", "ollama_preload", "priority", "cpu_threads", "diarization_batch_size", "keep_models_warm",
     "worker_idle_release_min", "live_min_chunk_sec", "live_max_chunk_sec", "live_pause_sec", "live_max_backlog_sec",
-    "live_on_battery", "live_polish", "live_polish_pause_sec", "live_polish_max_words", "keep_wav", "rename_folder",
+    "live_on_battery", "live_pause_pressure", "live_polish", "live_polish_pause_sec", "live_polish_max_words", "keep_wav", "rename_folder",
 ]
 
 

@@ -40,8 +40,13 @@ def test_stop_finishes_current_chunk_and_leaves_the_rest_to_the_stop_pass():
     assert store.lines and max(c["end"] for c in store.lines) < 20
 
 
+def test_warn_pressure_keeps_decoding_by_default():
+    _, _, store, _, models = run(meeting(), probe=Probe(LoadSample(2, 0.1, 0, False)))
+    assert models.tr.calls > 0 and store.lines
+
+
 def test_defers_under_memory_pressure_and_skips_on_battery():
-    _, stats, store, events, models = run(meeting(), probe=Probe(LoadSample(2, 0.1, 0, False)))  # replay ends anyway
+    _, stats, store, events, models = run(meeting(), probe=Probe(LoadSample(4, 0.1, 0, False)))  # replay ends anyway
     assert models.tr.calls == 0 and store.lines == [] and {"deferred"} <= {s["state"] for s in events.status}
     assert events.status[-2]["reason"] == "memory"
     _, stats, store, events, models = run(meeting(), probe=Probe(LoadSample(1, 0.1, 0, True)))
@@ -52,7 +57,7 @@ def test_defers_under_memory_pressure_and_skips_on_battery():
 def test_backlog_beyond_limit_is_skipped_oldest_first():
     cfg = Config()
     cfg.live_max_backlog_sec = 10.0
-    probe = Probe(*([LoadSample(2, 0.1, 0, False)] * 20 + [NORMAL]))  # 20 polls of pressure, then normal
+    probe = Probe(*([LoadSample(4, 0.1, 0, False)] * 20 + [NORMAL]))  # 20 polls of pressure, then normal
     _, stats, store, _, _ = run(meeting(60), probe=probe, cfg=cfg)
     skipped = [c for c in store.lines if c["status"] == "backlog"]
     assert skipped and stats["skipped_sec"] > 0

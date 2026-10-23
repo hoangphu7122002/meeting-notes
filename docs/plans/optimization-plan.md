@@ -78,7 +78,7 @@ and a colleague installs the app without a terminal or a Hugging Face account.
 | Swap growth during one 1 h job | unknown (4.9 M page-outs lifetime [local]) | measured, ≤ 1 GB | ≤ 500 MB | ≤ 500 MB |
 | Quality guard: WER (vi, en, code-switch) | Phase 0 baseline | ≤ +0.5 pp | ≤ +0.5 pp | ≤ +0.5 pp vs offline (strict reuse) |
 | Quality guard: DER (vi set) | Phase 0 baseline (community-1, torch) | ≤ +1 pp | ≤ +2 pp, speaker count right ≥ 80 % of files | same |
-| Live A during a call | defers whenever pressure ≠ normal, i.e. almost always here | n/a | n/a | T2 pass: no audio glitch / FPS drop > 10 %, backlog median < 30 s, skipped < 5 % of speech |
+| Live A during a call | defers only at critical pressure (was: any non-normal) | n/a | n/a | T2 pass: no audio glitch / FPS drop > 10 %, backlog median < 30 s, skipped < 5 % of speech |
 | Install | 14 required steps, ~4.5 GB, 25-45 min, needs Xcode CLT + Homebrew + HF account (`one-click-install.md` section 1) | 10 steps (no HF) | - | 5-6 steps, no terminal, ~15 min wait on 100 Mbps, 1 Gatekeeper approval |
 
 Why these numbers: 50 % is the bar the live-A study already used; 8 min is what a 5x diarizer plus the Python fixes
@@ -286,7 +286,9 @@ the RAM cost. AGENTS rule 9 still holds: never spawned at launch or while record
 
 ### Phase 5: live transcription (design A) memory-warn policy
 
-**Why:** design A is built (opt-in) but `domain/live_backlog.py:decide()` defers whenever pressure is above
+**Status:** decided and built (simple form): live runs under "warn", pauses only at "critical" (`live_pause_pressure`, default `critical`; `warn` = old strict). The swap-rate "balanced" policy below stays open and is gated by T2.
+
+**Why:** design A was built (opt-in) but `domain/live_backlog.py:decide()` defers whenever pressure is above
 "normal". On this Mac pressure is "warn" most of the time, so live almost never runs and Stop saves nothing. "Warn"
 alone does not mean decoding will hurt: whisper q4 is already resident in the live job (1.24 GB), and one chunk at
 `nice 10` adds little new memory. The right signal is *swap growing now*, not the pressure level. Without T2 (load

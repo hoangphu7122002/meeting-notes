@@ -41,7 +41,7 @@ struct LiveTranscriptView: View {
                 }
             }
             if transcript.isPaused {
-                Label(tr(.livePaused), systemImage: "pause.circle")
+                Label(tr(transcript.reason == "memory" ? .livePausedMemory : transcript.reason == "battery" ? .livePausedBattery : .livePaused), systemImage: "pause.circle")
                     .font(.system(size: 11))
                     .foregroundStyle(Palette.paused)
                     .lineLimit(2)

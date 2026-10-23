@@ -79,6 +79,7 @@ live_max_chunk_sec = 28.0     # ... and forced at this length (forced chunks are
 live_pause_sec = 0.7          # a pause at least this long ends a chunk
 live_max_backlog_sec = 120.0  # untranscribed audio beyond this is skipped live (oldest first)
 live_on_battery = false       # true: also transcribe live on battery power
+live_pause_pressure = "critical"  # "critical": live pauses only at critical memory pressure; "warn": also at warn
 # Live polish (display only): "off" | "rules" = deterministic cleanup of live text (sentences split across
 # chunks, casing, glossary spelling, decode loops, interjections like "ờ"/"um", paragraph breaks). Raw partials
 # and the transcript after Stop are never changed; tone marks are never touched.

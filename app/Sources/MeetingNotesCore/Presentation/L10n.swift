@@ -98,7 +98,7 @@ public enum Tr: String, CaseIterable, Sendable {
     case relaunchBlocked, gettingStartedHeading, gettingStarted1, gettingStarted2, gettingStarted3
     case audioTestHeading, audioTestHint, testStopFirst, testMeOK, testMeSilent, testMeError, testThemOK
     case testThemSilent, testThemNotPermitted, micAccessDenied, readyHeading, notesFolder, waitingHeading
-    case recentDuration, notificationBody, liveHeading, liveListening, livePaused
+    case recentDuration, notificationBody, liveHeading, liveListening, livePaused, livePausedMemory, livePausedBattery
 
     // Meeting status (recents)
     case meetingReady, meetingProcessing, meetingProcessingPercent, meetingQueued, meetingRecording, meetingFailed
@@ -309,6 +309,9 @@ public enum Tr: String, CaseIterable, Sendable {
         case .liveHeading: return ("Chép lời trực tiếp", "Live transcript")
         case .liveListening: return ("Đang nghe…", "Listening…")
         case .livePaused: return ("Chép lời trực tiếp tạm dừng – ghi chú vẫn đầy đủ", "Live transcript paused – notes will still be complete")
+
+        case .livePausedMemory: return ("Chép lời trực tiếp tạm dừng vì máy thiếu RAM – ghi chú vẫn đầy đủ", "Live transcript paused: low memory – notes will still be complete")
+        case .livePausedBattery: return ("Chép lời trực tiếp tạm dừng vì đang dùng pin – ghi chú vẫn đầy đủ", "Live transcript paused: on battery – notes will still be complete")
 
         case .meetingReady: return ("Có ghi chú", "Ready")
         case .meetingProcessing: return ("Đang xử lý", "Processing")
