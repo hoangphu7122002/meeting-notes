@@ -28,6 +28,18 @@ if [ -n "$hits" ]; then
   echo "$hits"; fail=1
 fi
 
+# Diarize helper: allowlist only; nothing else may import FluidAudio.
+hits=$(grep -rnE '^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]+' "$SRC/MeetingNotesDiarize" --include='*.swift' \
+  | grep -vE 'import[[:space:]]+(Foundation|AVFoundation|CoreML|FluidAudio)[[:space:]]*$' || true)
+if [ -n "$hits" ]; then
+  echo "ERROR: MeetingNotesDiarize may import only Foundation/AVFoundation/CoreML/FluidAudio:"; echo "$hits"; fail=1
+fi
+hits=$(grep -rnE '^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]+FluidAudio\b' "$SRC" --include='*.swift' \
+  | grep -v "^$SRC/MeetingNotesDiarize/" || true)
+if [ -n "$hits" ]; then
+  echo "ERROR: only MeetingNotesDiarize may import FluidAudio:"; echo "$hits"; fail=1
+fi
+
 # File length.
 long=$(find "$SRC" -name '*.swift' ! -name 'L10n.swift' -exec wc -l {} + | awk -v m=$MAX_LINES '$2!="total" && $1>m {print $1, $2}' || true)
 if [ -n "$long" ]; then

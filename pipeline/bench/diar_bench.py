@@ -1,7 +1,7 @@
 """Diarization-only benchmark (plan 0.3 / 3.5): DER, speaker-count error, time, peak RSS, swap, memory pressure.
 
   uv run python bench/diar_bench.py make <dir> [--minutes 12] [--remote 2] [--local 1] [--bleed] [--seed 0]
-  uv run python bench/diar_bench.py run <dir> [--engine pyannote|sherpa-onnx] [--label NAME] [--set key=value ...]
+  uv run python bench/diar_bench.py run <dir> [--engine pyannote|sherpa-onnx|fluidaudio] [--label NAME] [--set key=value ...]
                                     [--repeat 2] [--wait-normal 600] [--allow-warn]
   uv run python bench/diar_bench.py report <dir> [<dir> ...]
 
@@ -9,8 +9,8 @@ Fixtures are the pipeline_bench ones (bench/meeting_fixture.py: <dir>/meeting + 
 only the diarize stage (`application.diarize_tracks`: system track, mic voice check / full mic pass, two-track
 merge) in a fresh process at low priority (nice 10 + utility QoS under `taskpolicy -c utility`), one run at a
 time, with config = defaults + `diarization_engine` + `--set` (your config.toml is not read). Audio decoding is not
-timed. Each run appends one JSON line to <dir>/diar_results.jsonl: model load and diarize seconds, peak RSS,
-whether torch was imported, swap delta, vm_stat delta, memory pressure (start / worst / seconds per level), AC or
+timed. Each run appends one JSON line to <dir>/diar_results.jsonl: model load and diarize seconds, peak RSS
+(plus `child_rss_gb`, the largest subprocess such as the FluidAudio CLI), whether torch was imported, swap delta, vm_stat delta, memory pressure (start / worst / seconds per level), AC or
 battery, DER (collar 0 and 0.25, overall and per track) and speaker-count error vs reference.json.
 
 Memory pressure: as pipeline_bench, a run waits up to --wait-normal seconds for "normal", then fails, or with
@@ -84,6 +84,7 @@ def summarize(rows: list[dict]) -> list[dict]:
             "load_sec": med([r["load_sec"] for r in runs]), "diarize_sec": med([r["diarize_sec"] for r in runs]),
             "rtf": med([r["diarize_sec"] / max(r["audio_sec"], 1e-9) for r in runs]),
             "peak_rss_gb": med([r["peak_rss_gb"] for r in runs]),
+            "child_rss_gb": med([r.get("child_rss_gb", 0.0) for r in runs]),
             "swap_delta_mb": med([r["swap_delta_mb"] for r in runs]),
             "der": med([x["der"]["der"] for x in q]), "der_c25": med([x["der_collar"]["der"] for x in q]),
             "der_system": med([x["der_system"] for x in q]), "der_mic": med([x["der_mic"] for x in q]),
@@ -137,6 +138,7 @@ def child(fixture: Path) -> None:
     t2 = time.monotonic()
     print(json.dumps({"load_sec": round(t1 - t0, 2), "diarize_sec": round(t2 - t1, 2), "audio_sec": round(audio_sec, 1),
                       "peak_rss_gb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**30, 3),
+                      "child_rss_gb": round(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 2**30, 3),
                       "torch_loaded": "torch" in sys.modules, "methods": methods, "notes": notes,
                       "turns": [t.to_dict() for t in turns]}))
 
@@ -172,6 +174,7 @@ def run_once(fixture: Path, label: str, settings: dict, index: int, args) -> dic
         "label": label, "fixture": fixture.name, "run": index, "settings": settings,
         "started_at": datetime.now().isoformat(timespec="seconds"),
         **{k: result[k] for k in ("load_sec", "diarize_sec", "audio_sec", "peak_rss_gb", "torch_loaded", "methods", "notes")},
+        "child_rss_gb": result.get("child_rss_gb", 0.0),
         "swap_before_mb": before["swap_used_mb"], "swap_delta_mb": swap,
         "vm_delta_mb": vm_delta_mb(before["vm"], after["vm"]),
         "pressure": pressure, "condition": condition(pressure), "on_battery": before["on_battery"],
@@ -185,7 +188,7 @@ def run_once(fixture: Path, label: str, settings: dict, index: int, args) -> dic
 def print_row(row: dict) -> None:
     q = row["quality"]
     print(f"{row['label']}#{row['run']} {row['fixture']} [{row['condition']}] load {row['load_sec']}s diarize "
-          f"{row['diarize_sec']}s | rss {row['peak_rss_gb']} GB torch {row['torch_loaded']} swap {row['swap_delta_mb']} MB"
+          f"{row['diarize_sec']}s | rss {row['peak_rss_gb']} GB (child {row['child_rss_gb']}) torch {row['torch_loaded']} swap {row['swap_delta_mb']} MB"
           f" | DER {q['der']['der']} (c0.25 {q['der_collar']['der']}, system {q['der_system']}, mic {q['der_mic']})"
           f" spk {q['speakers']['all']['hyp']}/{q['speakers']['all']['ref']} | {', '.join(row['methods'])}", flush=True)
 
@@ -197,7 +200,7 @@ def report(fixtures: list[Path]) -> None:
         if path.exists():
             rows += [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
     cols = ["label", "fixture", "runs", "conditions", "total_sec", "load_sec", "diarize_sec", "rtf", "peak_rss_gb",
-            "swap_delta_mb", "der", "der_c25", "der_system", "der_mic", "spk_err"]
+            "child_rss_gb", "swap_delta_mb", "der", "der_c25", "der_system", "der_mic", "spk_err"]
     print("| " + " | ".join(cols) + " |\n|" + "---|" * len(cols))
     for r in summarize(rows):
         print("| " + " | ".join(str(r[c]) for c in cols) + " |")

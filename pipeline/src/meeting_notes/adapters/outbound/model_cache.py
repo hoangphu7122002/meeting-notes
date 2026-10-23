@@ -33,7 +33,7 @@ class Models:
 
     def _signature(self, cfg: Config) -> tuple:
         return (cfg.whisper_model, tuple(cfg.diarization_models), cfg.embedding_model, cfg.diarization_device,
-                cfg.diarization_engine, cfg.sherpa_embedding_model, cfg.sherpa_cluster_threshold)
+                cfg.diarization_engine, cfg.sherpa_embedding_model, cfg.sherpa_cluster_threshold, cfg.fluidaudio_cli)
 
     def update_config(self, cfg: Config) -> None:
         if self._signature(cfg) != self._signature(self.cfg):
@@ -141,8 +141,14 @@ class Models:
 
 
 def make_diarizer(cfg: Config, log: Callable[[str], None] = print):
-    """The diarizer for `diarization_engine`: "sherpa-onnx" (opt-in) or pyannote (default, also for unknown values)."""
-    if str(cfg.diarization_engine).strip().lower() in ("sherpa-onnx", "sherpa"):
+    """The diarizer for `diarization_engine`: "sherpa-onnx" / "fluidaudio" (opt-in) or pyannote (default, also for
+    unknown values)."""
+    engine = str(cfg.diarization_engine).strip().lower()
+    if engine == "fluidaudio":
+        from .fluidaudio_diarizer import FluidAudioDiarizer
+
+        return FluidAudioDiarizer(cfg, log=log)
+    if engine in ("sherpa-onnx", "sherpa"):
         from .sherpa_diarizer import SherpaDiarizer
 
         return SherpaDiarizer(cfg, log=log)

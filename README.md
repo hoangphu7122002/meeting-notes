@@ -45,6 +45,13 @@ embeddings, Apache-2.0) on the CPU. Install it with `cd pipeline && uv sync --ex
 (~34 MB) download from the sherpa-onnx GitHub releases on first use into `models/sherpa-onnx/` (sha256-checked, no
 login). Benchmarks and licenses: `docs/research/diarization-alternatives.md`.
 
+**Optional fast engine (experimental):** `diarization_engine = "fluidaudio"` runs
+[FluidAudio](https://github.com/FluidInference/FluidAudio)'s Core ML port of community-1 on the Neural Engine
+(SDK Apache-2.0; weights CC-BY-4.0 from pyannote, WeSpeaker, BUT Speech@FIT, converted by Fluid Inference) through a
+helper CLI. Build it once with `cd app && swift build -c release --product MeetingNotesDiarize`; the ~21 MB of
+weights download on first use into `models/fluidaudio/` (pinned commit, no login). The app bundle does not ship it
+yet. The mic single-voice check and any failure still use pyannote.
+
 ## First run (permissions)
 
 1. Open `~/Applications/MeetingNotes.app`. The main window opens with a getting-started note and the permission checklist (Fix buttons and a 5 s live Me/Them test). Notifications are optional ("Notes ready"). The window opens again from the Dock icon, `open -a MeetingNotes`, `open meetingnotes://show` or the menus (Open MeetingNotes).

@@ -39,6 +39,10 @@ diarization_device = "auto" # auto | mps | cpu
 diarization_engine = "pyannote"
 sherpa_embedding_model = "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced"
 sherpa_cluster_threshold = 0.9  # sherpa only: lower = more speakers
+# "fluidaudio" (opt-in, experimental): Core ML port of community-1 on the Neural Engine via the helper CLI
+# (`swift build -c release --product MeetingNotesDiarize` in app/); ungated weights download on first use into
+# models/fluidaudio/. Falls back to pyannote if the binary is missing or fails. Empty = app/.build or PATH.
+fluidaudio_cli = ""
 me_name = "Me"
 mic_speakers = "auto"       # "me": everything on the microphone is you
 # Check with a few voice embeddings whether the microphone holds only your voice; if sure, skip full

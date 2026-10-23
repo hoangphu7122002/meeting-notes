@@ -6,7 +6,7 @@ FIELDS = [
     "notes_dir", "whisper_model", "languages", "initial_prompt", "glossary", "whisper_vad", "vad_split_gap",
     "whisper_temperature_fallback", "whisper_condition_on_previous_text", "whisper_max_chunk_sec",
     "mlx_cache_limit_mb", "diarization_models", "embedding_model", "cluster_threshold", "diarization_device",
-    "diarization_engine", "sherpa_embedding_model", "sherpa_cluster_threshold",
+    "diarization_engine", "fluidaudio_cli", "sherpa_embedding_model", "sherpa_cluster_threshold",
     "me_name", "mic_speakers", "mic_voice_check", "ollama_url", "ollama_model", "ollama_num_ctx", "ollama_keep_alive",
     "ollama_num_thread", "ollama_timeout_sec", "summary_chunk_chars", "summary_extract_chars", "summary_template",
     "summary_language", "ollama_preload", "priority", "cpu_threads", "diarization_batch_size", "keep_models_warm",
