@@ -32,6 +32,10 @@ class Transcriber(Protocol):
 
     def transcribe(self, audio: np.ndarray, language: str) -> list[dict]: ...
 
+    def transcribe_auto(self, audio: np.ndarray, choose: Callable[[dict[str, float]], str]) -> tuple[str, list[dict]]:
+        """Detect the language (probabilities -> `choose`) and transcribe with it, sharing one encoder pass."""
+        ...
+
     def release(self) -> None: ...
 
 

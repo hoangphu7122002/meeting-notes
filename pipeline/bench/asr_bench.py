@@ -163,6 +163,10 @@ def routed_transcriber(cfg, vi_model: str):
     class Routed(Transcriber):
         _vi = None
 
+        def transcribe_auto(self, audio, choose):
+            language = choose(self.detect_language(audio))  # detect with the base model, decode routed
+            return language, self.transcribe(audio, language)
+
         def transcribe(self, audio, language):
             base = self._load()
             if language == "vi":

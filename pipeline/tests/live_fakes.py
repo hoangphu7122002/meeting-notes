@@ -37,6 +37,10 @@ class PitchTranscriber:
         return [{"start": 0.0, "end": len(audio) / SR, "text": f" voice {int(round(f0 / 10)) * 10} ",
                  "no_speech_prob": 0.01, "avg_logprob": -0.2, "compression_ratio": 1.1}]
 
+    def transcribe_auto(self, audio, choose):
+        language = choose(self.detect_language(audio))
+        return language, self.transcribe(audio, language)
+
     def release(self):
         pass
 

@@ -104,14 +104,24 @@ def decode_block(b: Block, track: np.ndarray, threshold: float, transcriber: Tra
     spans = [(a, z) for a, z in spans if z - a >= int(MIN_BLOCK_SEC * SR)]
     if not spans:
         return [], None
-    voiced = np.concatenate([chunk[a:z] for a, z in spans]) if len(spans) > 1 else chunk[spans[0][0]:spans[0][1]]
-    probs = transcriber.detect_language(np.ascontiguousarray(voiced))
     prior = seconds_by_speaker_lang.get(b.speaker)
-    language = choose_language(probs, allowed, dict(prior) if prior else None, b.duration < SHORT_BLOCK_SEC)
+
+    def choose(probs: dict[str, float]) -> str:
+        return choose_language(probs, allowed, dict(prior) if prior else None, b.duration < SHORT_BLOCK_SEC)
+
+    if len(spans) == 1:
+        # One voiced span: detection shares the decoder's encoder pass (identical text for the chosen language).
+        language, first = transcriber.transcribe_auto(np.ascontiguousarray(chunk[spans[0][0]:spans[0][1]]), choose)
+        decoded = [first]
+    else:
+        # Several spans: detect on all voiced audio together (more evidence than any one span), then decode each.
+        voiced = np.concatenate([chunk[a:z] for a, z in spans])
+        language = choose(transcriber.detect_language(np.ascontiguousarray(voiced)))
+        decoded = [transcriber.transcribe(np.ascontiguousarray(chunk[a:z]), language) for a, z in spans]
     segments: list[Segment] = []
-    for a, z in spans:
+    for (a, _), span_segments in zip(spans, decoded):
         offset = base_sec + (s0 + a) / SR
-        for seg in transcriber.transcribe(np.ascontiguousarray(chunk[a:z]), language):
+        for seg in span_segments:
             text = collapse_repeats(" ".join(seg.get("text", "").split()))
             seg_sec = float(seg["end"]) - float(seg["start"])
             if not keep_segment(seg) or is_hallucination(text, b.duration, seg_sec):

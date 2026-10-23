@@ -110,6 +110,9 @@ class CountingTranscriber:
     def transcribe(self, audio, language):
         return self._timed(self.inner.transcribe, audio, language)
 
+    def transcribe_auto(self, audio, choose):
+        return self._timed(self.inner.transcribe_auto, audio, choose)
+
     def _timed(self, fn, *args):
         t0 = time.monotonic()
         try:

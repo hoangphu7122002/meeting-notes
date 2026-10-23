@@ -20,6 +20,10 @@ class FakeTranscriber:
         self.calls.append(language)
         return [{"start": 0.25, "end": len(audio) / SR - 0.25, "text": f" hello {language} ", "no_speech_prob": 0.01, "avg_logprob": -0.2, "compression_ratio": 1.2}]
 
+    def transcribe_auto(self, audio, choose):
+        language = choose(self.detect_language(audio))
+        return language, self.transcribe(audio, language)
+
 
 def test_transcribe_blocks_offsets_and_language_prior():
     audio = np.concatenate([np.full(SR * 10, 0.2), np.full(SR * 2, -0.2)]).astype(np.float32)
@@ -53,3 +57,30 @@ def test_transcribe_blocks_vad_skips_silent_blocks_and_offsets_spans():
     segs = transcribe_blocks(blocks, {"mic": audio}, fake, ["vi", "en"], vad=True, split_gap=2.0)
     assert len(fake.calls) == 2 and len(segs) == 2  # two spans of block 1, nothing for the silent block
     assert abs(segs[0].start - 1.95) < 0.2 and abs(segs[1].start - 7.95) < 0.2
+
+
+def test_single_span_blocks_share_one_encoder_pass():
+    class Counting(FakeTranscriber):
+        def __init__(self):
+            super().__init__()
+            self.detects = self.autos = 0
+
+        def detect_language(self, audio):
+            self.detects += 1
+            return super().detect_language(audio)
+
+        def transcribe_auto(self, audio, choose):
+            self.autos += 1
+            language = choose({"en": 0.9, "vi": 0.1})
+            return language, self.transcribe(audio, language)
+
+    audio = np.full(SR * 10, 0.2, dtype=np.float32)
+    fake = Counting()
+    segs = transcribe_blocks([Block(0, 10, "Me", "mic")], {"mic": audio}, fake, ["vi", "en"])
+    assert (fake.autos, fake.detects) == (1, 0)
+    assert segs[0].language == "en" and fake.calls == ["en"]
+    # The chooser still applies the allowed list and the speaker prior.
+    fake = Counting()
+    segs = transcribe_blocks([Block(0, 10, "Me", "mic"), Block(10, 11, "Me", "mic")], {"mic": np.tile(audio, 2)},
+                             fake, ["vi"])
+    assert {s.language for s in segs} == {"vi"}
