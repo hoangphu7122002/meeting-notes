@@ -382,6 +382,19 @@ bundle (PyInstaller) or a Swift-native rewrite would be 2-8 weeks for no signing
   missing Homebrew/uv/ffmpeg/Ollama, `uv sync`, builds the helper, `meeting-notes setup` (whisper, embeddings,
   FluidAudio, Ollama model), `build-app.sh`, `doctor`, next steps; `--dry-run`; refuses to quit a recording app
   unless `--force`. Dev mode is now 4 steps (Xcode CLT, clone, `make install`, 2 permissions); M2-M7 open.
+- **Status (2026-10-23): M2, M3, M4 and M5 built; M6 and M7 open; nothing published.** `scripts/release.sh`
+  (`make release`, `--dry-run`, `--version`) runs `build-app.sh --packaged` (Info.plist `MNPackaged`, pipeline
+  source + `uv.lock` in `Contents/Resources/pipeline`, `uv` in `Contents/MacOS`, notices), checks the bundle (signed,
+  no `.env`/token/models/recordings) and writes `build/release/MeetingNotes-<version>.dmg` (Applications link,
+  vi/en "Open Anyway" read-me) + `SHA256SUMS.txt`: **31 MB** for 0.1.0. First-run wizard (main-window card, Vietnamese
+  default): runtime (copy pipeline to `~/Library/Application Support/MeetingNotes/runtime`, `uv sync --frozen
+  --no-dev` with a managed Python; verified on this Mac: 14 s from a warm uv cache, venv 1.5 GB), speech and
+  diarization models (`meeting-notes setup --only ... --json`), Ollama detect (link to ollama.com or the Homebrew
+  command, never installs), summary model pull; resumable, cancellable, `nice 10`, paused while recording or a
+  notes job runs, only the runtime step re-runs after an update. ffmpeg optional (macOS `afconvert` fallback).
+  `.github/workflows/release-dmg.yml` exists but is manual-only (ad-hoc signed artifact, no release). Steps and
+  checklist: `docs/release.md`. Open: M7 fresh-Mac run (Gatekeeper on bundled helpers, permissions surviving an
+  update), M6 updater, publishing decisions (section 5).
 - **Expected gain:** 14 → 5-6 steps, no terminal, no HF account, ~15 min wait on 100 Mbps; dmg ~0.1-0.15 GB,
   first-run download ~3.4 GB.
 - **Risk:** medium: runtime downloads from PyPI/GitHub extend AGENTS rule 1; private repo blocks auto-update;

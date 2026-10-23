@@ -5,6 +5,15 @@ Local-only macOS meeting recorder. It records your mic and the other participant
 - **App** (`app/`, Swift/SwiftUI): recording, floating pill, Dock/menu bar icons, hotkeys, notes viewer. Vietnamese (default) or English UI.
 - **Pipeline** (`pipeline/`, Python/uv): transcription, diarization, summary. Runs after each recording; also usable from the CLI.
 
+## Download (no terminal)
+
+1. Download `MeetingNotes-<version>.dmg` from [GitHub Releases](https://github.com/hoangphu7122002/meeting-notes/releases) and drag MeetingNotes to Applications.
+2. Open it once; macOS blocks it (self-signed, not notarized). System Settings › Privacy & Security › **Open Anyway**, once per download (steps in the dmg's read-me).
+3. Press **Cài đặt / Set up**: the app downloads ~3.4 GB itself (Python, models) and guides you to install [Ollama](https://ollama.com/download) if missing. No Hugging Face account.
+4. Allow Microphone and Screen & System Audio Recording.
+
+Maintainers: [docs/release.md](docs/release.md).
+
 ## Requirements
 
 macOS 14+ (15 recommended), Apple Silicon, Xcode Command Line Tools (`xcode-select --install`). No Hugging Face account.

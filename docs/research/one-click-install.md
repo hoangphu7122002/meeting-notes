@@ -14,6 +14,12 @@ installs the app, runs `doctor` and prints the permission steps. Idempotent; `--
 MeetingNotes is never quit unless `--force`. A new user now does: Xcode CLT, `git clone`, `make install`, 2
 permissions. The no-terminal dmg path (option B, sections 5-6) is still open.
 
+**Update (2026-10-23, implemented): option B dmg + first-run wizard (not yet published).** `scripts/release.sh`
+builds a 31 MB self-signed `MeetingNotes-<version>.dmg`; the app's setup card downloads the rest itself (section 6
+option B, without bundled pyannote weights: FluidAudio is the default). Newcomer steps: download dmg, drag to
+Applications, Open Anyway once, Set up, install Ollama from ollama.com if the card asks, 2 permissions. Details and
+checklist: [`docs/release.md`](../release.md).
+
 ## Shared install (several macOS accounts)
 
 Implemented 2026-10-23: `make install-shared` = `scripts/install.sh --shared` (logic in `scripts/install-shared.sh`,

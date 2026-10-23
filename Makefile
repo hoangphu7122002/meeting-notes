@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install install-shared deps dev lint lint-arch test test-e2e build-app previews ci clean
+.PHONY: help install install-shared deps dev lint lint-arch test test-e2e build-app release previews ci clean
 DIR ?= docs/screenshots
 
 help: ## List targets
@@ -35,6 +35,9 @@ test-e2e: ## Pipeline end-to-end tests
 
 build-app: ## Build, sign and install ~/Applications/MeetingNotes.app (+ diarization helper)
 	scripts/build-app.sh
+
+release: ## Build build/release/MeetingNotes-<version>.dmg (never installs or publishes). ARGS=--dry-run|--version X
+	scripts/release.sh $(ARGS)
 
 previews: ## Render UI previews to PNG (DIR=docs/screenshots)
 	cd app && swift run MeetingNotesPreviews $(abspath $(DIR))
