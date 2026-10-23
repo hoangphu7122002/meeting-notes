@@ -138,12 +138,17 @@ public enum Tr: String, CaseIterable, Sendable {
     case etaUnderMinute, etaMinutes, etaHours, etaHoursMinutes, durSeconds, durMinutes, durHours, durHoursMinutes
 
     // Settings
-    case settingsWindowTitle, sectionRecording, sectionNotes, sectionControls, sectionGeneral, language
-    case suggestRecording, detectionRequires, stopAfterSilence, off, offerStopOnCallEnd, hotkeyStartStopLabel
-    case hotkeyPauseLabel, hotkeyNone, hotkeyChangeHint, createNotesLabel, modeRightAway, modeWhenIdle, modeManual
-    case summaryModelLabel, modelLight, modelBetter, showInDock, showPillRecording, showPillIdle, launchAtLogin
-    case loginItemStatus, loginEnabled, loginNeedsApproval, loginOff, loginUnavailable, loginUnknown, version
+    case settingsWindowTitle, groupBasics, groupDuringMeeting, groupAfterMeeting, groupAdvanced, language, helpLanguage
+    case launchAtLogin, helpLaunchAtLogin, loginNeedsApproval, loginUnavailable, actionOpenLoginItems
+    case missingPermissions, helpMissingPermissions, actionGrantMicrophone, actionGrantSystemAudio
+    case setupUnfinished, helpSetupUnfinished, actionOpenSetup
+    case suggestRecording, helpDetection, detectionRequires, stopOnCallEnd, helpStopOnCallEndNeedsDetection, helpCountdown
+    case stopAfterSilence, silenceNever, helpSilence, helpSilenceOff, shortcutsLabel, helpShortcuts, hotkeyNone
+    case createNotesLabel, modeRightAway, modeWhenIdle, modeManual, helpRightAway, helpWhenIdle, helpManual
+    case summaryModelLabel, modelLight, modelBetter, helpSummary, helpSummaryLowMemory, saveLocation
     case liveTranscriptionToggle, liveTranscriptionCaption, livePolishToggle, livePolishCaption, liveShowRaw, liveShowPolished
+    case pillLabel, pillWhileRecording, pillAlways, pillNever, helpPill, helpPillNever, actionResetPosition
+    case showInDock, helpDock, version
 
     // Notes viewer
     case summaryInProgress, noNotes, searchTranscript, summaryHeading, decisionsHeading, actionItemsHeading
@@ -432,49 +437,64 @@ public enum Tr: String, CaseIterable, Sendable {
         case .durHoursMinutes: return ("%1 giờ %2 phút", "%1 h %2 min")
 
         case .settingsWindowTitle: return ("Cài đặt Meeting Notes", "Meeting Notes Settings")
-        case .sectionRecording: return ("Ghi âm", "Recording")
-        case .sectionNotes: return ("Ghi chú", "Notes")
-        case .sectionControls: return ("Điều khiển", "Controls")
-        case .sectionGeneral: return ("Chung", "General")
+        case .groupBasics: return ("Cơ bản", "Basics")
+        case .groupDuringMeeting: return ("Khi họp", "During meetings")
+        case .groupAfterMeeting: return ("Sau khi họp", "After meetings")
+        case .groupAdvanced: return ("Nâng cao", "Advanced")
         case .language: return ("Ngôn ngữ (Language)", "Language (Ngôn ngữ)")
-        case .suggestRecording: return ("Gợi ý ghi khi ứng dụng họp dùng micro", "Suggest recording when a meeting app uses the microphone")
-        case .detectionRequires: return ("Nhận diện cuộc họp cần macOS 14.2", "Meeting detection requires macOS 14.2")
-        case .stopAfterSilence: return ("Dừng khi im lặng", "Stop after silence")
-        case .off: return ("Tắt", "Off")
-        case .offerStopOnCallEnd: return ("Đề nghị dừng khi ứng dụng họp ngừng dùng micro", "Offer to stop when the meeting app releases the microphone")
-        case .hotkeyStartStopLabel: return ("Bắt đầu / dừng", "Start / stop")
-        case .hotkeyPauseLabel: return ("Tạm dừng / tiếp tục", "Pause / resume")
-        case .hotkeyNone: return ("không có", "none")
-        case .hotkeyChangeHint:
-            return ("Đổi bằng `defaults write %1 hotkey \"ctrl+opt+cmd+r\"` (hoặc `pauseHotkey`), rồi mở lại ứng dụng.",
-                    "Change with `defaults write %1 hotkey \"ctrl+opt+cmd+r\"` (or `pauseHotkey`), then relaunch.")
-        case .createNotesLabel: return ("Tạo ghi chú", "Create notes")
-        case .modeRightAway: return ("Ngay sau khi dừng (ưu tiên thấp)", "Right away (low priority)")
-        case .modeWhenIdle: return ("Khi máy rảnh và đang cắm sạc", "When idle and plugged in")
-        case .modeManual: return ("Thủ công", "Manually")
-        case .summaryModelLabel: return ("Mô hình tóm tắt", "Summary model")
-        case .modelLight: return ("Nhẹ — qwen3:4b (~3,6 GB RAM)", "Light — qwen3:4b (~3.6 GB RAM)")
-        case .modelBetter: return ("Tốt hơn — qwen3:8b (~6,3 GB RAM)", "Better — qwen3:8b (~6.3 GB RAM)")
-        case .showInDock: return ("Hiện trong Dock", "Show in Dock")
-        case .showPillRecording: return ("Hiện thanh điều khiển nổi khi đang ghi", "Show floating control while recording")
-        case .showPillIdle: return ("Hiện thanh điều khiển nổi khi không ghi", "Show floating control when idle")
-        case .launchAtLogin: return ("Mở khi đăng nhập", "Launch at login")
-        case .loginItemStatus: return ("Mục đăng nhập: %1", "Login item: %1")
-        case .loginEnabled: return ("Đang bật", "Enabled")
-        case .loginNeedsApproval: return ("Cần phê duyệt trong Cài đặt hệ thống › Cài đặt chung › Mục đăng nhập", "Needs approval in System Settings › General › Login Items")
-        case .loginOff: return ("Tắt", "Off")
+        case .helpLanguage: return ("Chữ trong app đổi ngay.", "The app's text changes right away.")
+        case .launchAtLogin: return ("Mở cùng máy", "Open at login")
+        case .helpLaunchAtLogin: return ("Để không quên ghi khi vào họp.", "So you never forget to record a meeting.")
+        case .loginNeedsApproval: return ("Cần cho phép trong Cài đặt hệ thống › Cài đặt chung › Mục đăng nhập.", "Needs approval in System Settings › General › Login Items.")
         case .loginUnavailable: return ("Không khả dụng (hãy chạy bản đã cài trong ~/Applications)", "Unavailable (run the installed app from ~/Applications)")
-        case .loginUnknown: return ("Không rõ", "Unknown")
+        case .actionOpenLoginItems: return ("Mở Mục đăng nhập…", "Open Login Items…")
+        case .missingPermissions: return ("Thiếu quyền để ghi", "Recording needs permission")
+        case .helpMissingPermissions: return ("Mở đúng mục trong Cài đặt hệ thống để cho phép.", "Opens the right place in System Settings.")
+        case .actionGrantMicrophone: return ("Micro…", "Microphone…")
+        case .actionGrantSystemAudio: return ("Âm thanh hệ thống…", "System audio…")
+        case .setupUnfinished: return ("Thiết lập lần đầu chưa xong", "First-run setup is not finished")
+        case .helpSetupUnfinished: return ("Xong bước này thì mới viết được ghi chú.", "Notes can be written once it is done.")
+        case .actionOpenSetup: return ("Mở thiết lập", "Open setup")
+        case .suggestRecording: return ("Hỏi ghi khi có cuộc họp", "Ask to record when a meeting starts")
+        case .helpDetection: return ("Khi Zoom, Meet, Teams… bật micro. App không bao giờ tự ghi.", "When Zoom, Meet, Teams… turn on the mic. The app never records on its own.")
+        case .detectionRequires: return ("Cần macOS 14.2 trở lên.", "Needs macOS 14.2 or later.")
+        case .stopOnCallEnd: return ("Tự dừng khi cuộc gọi kết thúc", "Stop when the call ends")
+        case .helpStopOnCallEndNeedsDetection: return ("Cần bật “Hỏi ghi khi có cuộc họp” ở trên.", "Needs “Ask to record when a meeting starts” above.")
+        case .helpCountdown: return ("Đếm ngược 60 giây rồi dừng; bấm “Tiếp tục ghi” để giữ.", "Counts down 60 s, then stops; click “Keep recording” to continue.")
+        case .stopAfterSilence: return ("Tự dừng khi im lặng", "Stop after silence")
+        case .silenceNever: return ("Không tự dừng", "Never")
+        case .helpSilence: return ("Khi không ai nói trong khoảng này; cũng đếm ngược 60 giây trước.", "When nobody speaks for this long; also counts down 60 s first.")
+        case .helpSilenceOff: return ("App ghi đến khi bạn bấm Dừng.", "Records until you click Stop.")
+        case .shortcutsLabel: return ("Phím tắt", "Shortcuts")
+        case .helpShortcuts: return ("Dùng được khi đang ở app khác.", "Work from any app.")
+        case .hotkeyNone: return ("không có", "none")
+        case .createNotesLabel: return ("Viết ghi chú", "Write notes")
+        case .modeRightAway: return ("Ngay sau buổi họp", "Right after the meeting")
+        case .modeWhenIdle: return ("Khi máy rảnh và cắm sạc", "When idle and plugged in")
+        case .modeManual: return ("Khi tôi bấm", "When I click")
+        case .helpRightAway: return ("Chép lời và tóm tắt ngay trên máy, chạy nhẹ để máy không bị chậm.", "Transcribes and summarizes on this Mac, gently so it stays responsive.")
+        case .helpWhenIdle: return ("Chờ cắm sạc và 3 phút không dùng máy. Cần gấp thì bấm “Tạo ghi chú ngay”.", "Waits for power and 3 minutes without use. In a hurry? Click “Create notes now”.")
+        case .helpManual: return ("Chỉ lưu bản ghi; bấm “Tạo ghi chú” ở buổi họp khi cần.", "Only saves the recording; click “Create notes” on a meeting when needed.")
+        case .summaryModelLabel: return ("Chất lượng tóm tắt", "Summary quality")
+        case .modelLight: return ("Nhanh (máy 8 GB)", "Fast (8 GB Mac)")
+        case .modelBetter: return ("Kỹ hơn (cần 16 GB)", "Thorough (needs 16 GB)")
+        case .helpSummary: return ("Chạy bằng Ollama ngay trên máy; “Kỹ hơn” tải thêm ~5 GB lần đầu.", "Runs in Ollama on this Mac; “Thorough” downloads ~5 GB once.")
+        case .helpSummaryLowMemory: return ("Máy này có %1 GB RAM: “Kỹ hơn” có thể rất chậm. Nên chọn “Nhanh”.", "This Mac has %1 GB of RAM: “Thorough” may be very slow. “Fast” is safer.")
+        case .saveLocation: return ("Nơi lưu", "Save to")
+        case .liveTranscriptionToggle: return ("Hiện chữ khi đang họp", "Show text during the meeting")
+        case .liveTranscriptionCaption: return ("Chỉ chạy khi cắm sạc, tốn thêm RAM. Ghi chú sau họp không đổi.", "Runs only when plugged in and uses more memory. Notes do not change.")
+        case .livePolishToggle: return ("Làm chữ dễ đọc", "Make the text easier to read")
+        case .livePolishCaption: return ("Viết hoa, bỏ tiếng đệm; áp dụng từ lần ghi sau.", "Capitalizes and drops fillers, from the next recording on.")
+        case .pillLabel: return ("Thanh nổi", "Floating control")
+        case .pillWhileRecording: return ("Khi đang ghi", "While recording")
+        case .pillAlways: return ("Luôn hiện", "Always")
+        case .pillNever: return ("Không hiện", "Never")
+        case .helpPill: return ("Thanh nhỏ có đồng hồ và nút dừng.", "A small bar with the timer and Stop.")
+        case .helpPillNever: return ("Dừng ghi bằng thanh menu hoặc phím tắt.", "Stop from the menu bar or with the shortcut.")
+        case .actionResetPosition: return ("Đặt lại vị trí", "Reset position")
+        case .showInDock: return ("Hiện biểu tượng ở Dock", "Show icon in the Dock")
+        case .helpDock: return ("Tắt: app chỉ nằm trên thanh menu.", "Off: the app lives only in the menu bar.")
         case .version: return ("Phiên bản", "Version")
-        case .liveTranscriptionToggle: return ("Chép lời trực tiếp khi đang ghi", "Live transcript while recording")
-        case .liveTranscriptionCaption:
-            return ("Hiện lời thoại ngay trong cuộc họp. Tốn thêm bộ nhớ và GPU khi đang ghi; ghi chú sau cuộc họp vẫn đầy đủ như thường.",
-                    "Shows what is said during the meeting. Uses more memory and GPU while recording; the notes afterwards are still complete.")
-
-        case .livePolishToggle: return ("Làm gọn lời chép trực tiếp", "Tidy up the live transcript")
-        case .livePolishCaption:
-            return ("Nối câu bị cắt, viết hoa đầu câu, sửa chính tả thuật ngữ, bỏ tiếng đệm và chia đoạn. Chỉ để hiển thị: bản gốc vẫn được giữ, ghi chú không đổi. Áp dụng từ lần chép lời trực tiếp tiếp theo.",
-                    "Joins split sentences, capitalizes, fixes glossary spelling, drops fillers and adds paragraphs. Display only: the raw text is kept and the notes do not change. Applies from the next live transcript.")
         case .liveShowRaw: return ("Xem bản gốc", "Show raw")
         case .liveShowPolished: return ("Xem bản đã làm gọn", "Show tidied")
 

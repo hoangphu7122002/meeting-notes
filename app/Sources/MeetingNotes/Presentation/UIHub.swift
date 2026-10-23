@@ -99,9 +99,13 @@ final class UIHub: NSObject, UIPresenter, NSWindowDelegate {
         if windowEditingTitle { mainWindow?.makeFirstResponder(nil) }
     }
 
+    /// Moves the pill back to its default spot and shows it there, unless the user chose never to show it.
     func resetPillPosition() {
         pill.resetPosition()
-        pill.show(expand: false)
+        if SettingsRules.resetPillPositionEnabled(PillMode(whileRecording: Settings.showRecordingPill,
+                                                           whenIdle: Settings.showIdlePill)) {
+            pill.show(expand: false)
+        }
     }
 
     func setShowInDock(_ show: Bool) {

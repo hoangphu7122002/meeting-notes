@@ -5,20 +5,17 @@ import MeetingNotesCore
 import ServiceManagement
 
 public enum LoginItem {
-    public static var isEnabled: Bool {
-        let status = SMAppService.mainApp.status
-        return status == .enabled || status == .requiresApproval
-    }
-
-    public static var statusText: String {
+    public static var state: LoginItemState {
         switch SMAppService.mainApp.status {
-        case .enabled: return tr(.loginEnabled)
-        case .requiresApproval: return tr(.loginNeedsApproval)
-        case .notRegistered: return tr(.loginOff)
-        case .notFound: return tr(.loginUnavailable)
-        @unknown default: return tr(.loginUnknown)
+        case .enabled: return .enabled
+        case .requiresApproval: return .requiresApproval
+        case .notRegistered: return .off
+        case .notFound: return .unavailable
+        @unknown default: return .unknown
         }
     }
+
+    public static var isEnabled: Bool { state.isOn }
 
     public static func set(_ enabled: Bool) throws {
         if enabled {
@@ -27,4 +24,7 @@ public enum LoginItem {
             try SMAppService.mainApp.unregister()
         }
     }
+
+    /// System Settings › General › Login Items (where a "needs approval" item is allowed).
+    public static func openSystemSettings() { SMAppService.openSystemSettingsLoginItems() }
 }
