@@ -1,5 +1,6 @@
 import AppKit
 import CoreAudio
+import MeetingNotesLaunch
 
 /// Event-driven detection of known meeting apps using the microphone (CoreAudio process objects, macOS 14.2+).
 ///
@@ -12,25 +13,6 @@ final class MeetingDetector {
         let name: String
         let bundleID: String
     }
-
-    /// Bundle ID prefixes (exact match or followed by ".", e.g. `com.google.Chrome.helper`).
-    static let knownApps: [(prefix: String, name: String)] = [
-        ("us.zoom.xos", "Zoom"),
-        ("com.microsoft.teams2", "Teams"),
-        ("com.microsoft.teams", "Teams"),
-        ("com.cisco.webexmeetingsapp", "Webex"),
-        ("Cisco-Systems.Spark", "Webex"),
-        ("com.tinyspeck.slackmacgap", "Slack"),
-        ("com.apple.FaceTime", "FaceTime"),
-        ("com.hnc.Discord", "Discord"),
-        ("com.google.Chrome", "Chrome"),
-        ("com.apple.Safari", "Safari"),
-        ("com.apple.WebKit.GPU", "Safari"),
-        ("company.thebrowser.Browser", "Arc"),
-        ("com.microsoft.edgemac", "Edge"),
-        ("com.brave.Browser", "Brave"),
-        ("org.mozilla.firefox", "Firefox"),
-    ]
 
     /// Main queue: a known app started a microphone session.
     var onStart: ((App) -> Void)?
@@ -60,9 +42,8 @@ final class MeetingDetector {
         return false
     }
 
-    static func match(bundleID: String) -> String? {
-        knownApps.first { bundleID == $0.prefix || bundleID.hasPrefix($0.prefix + ".") }?.name
-    }
+    /// Known meeting apps: `MeetingApps.known` (shared with the launcher agent).
+    static func match(bundleID: String) -> String? { MeetingApps.name(bundleID: bundleID) }
 
     func start() {
         guard Self.isSupported else { return }

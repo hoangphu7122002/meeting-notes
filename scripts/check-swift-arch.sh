@@ -40,6 +40,20 @@ if [ -n "$hits" ]; then
   echo "ERROR: only MeetingNotesDiarize may import FluidAudio:"; echo "$hits"; fail=1
 fi
 
+# Launch rules: Foundation only (the launcher agent links nothing heavier).
+hits=$(grep -rnE '^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]+' "$SRC/MeetingNotesLaunch" --include='*.swift' \
+  | grep -vE 'import[[:space:]]+Foundation[[:space:]]*$' || true)
+if [ -n "$hits" ]; then
+  echo "ERROR: MeetingNotesLaunch may import only Foundation:"; echo "$hits"; fail=1
+fi
+
+# Launcher agent (always running): allowlist only, no Core/UI (their frameworks would load into it).
+hits=$(grep -rnE '^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]+' "$SRC/MeetingNotesLauncher" --include='*.swift' \
+  | grep -vE 'import[[:space:]]+(Foundation|AppKit|CoreAudio|os|MeetingNotesLaunch)[[:space:]]*$' || true)
+if [ -n "$hits" ]; then
+  echo "ERROR: MeetingNotesLauncher may import only Foundation/AppKit/CoreAudio/os/MeetingNotesLaunch:"; echo "$hits"; fail=1
+fi
+
 # File length.
 long=$(find "$SRC" -name '*.swift' ! -name 'L10n.swift' -exec wc -l {} + | awk -v m=$MAX_LINES '$2!="total" && $1>m {print $1, $2}' || true)
 if [ -n "$long" ]; then

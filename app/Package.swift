@@ -9,6 +9,12 @@ let package = Package(
         .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.17.7"),
     ],
     targets: [
+        // Meeting-app list and the "open the app when a meeting starts" rules (Foundation only): shared by the app
+        // and the tiny launcher agent, which must stay small (no Core frameworks).
+        .target(
+            name: "MeetingNotesLaunch",
+            path: "Sources/MeetingNotesLaunch"
+        ),
         // Pure logic (state machines, clock, WAV writing, event parsing, localization, layout); unit-tested.
         .target(
             name: "MeetingNotesCore",
@@ -23,13 +29,13 @@ let package = Package(
         // Contains no capture, worker or app-delegate code.
         .target(
             name: "MeetingNotesUI",
-            dependencies: ["MeetingNotesCore"],
+            dependencies: ["MeetingNotesCore", "MeetingNotesLaunch"],
             path: "Sources/MeetingNotesUI",
             linkerSettings: [.linkedFramework("ServiceManagement")]
         ),
         .executableTarget(
             name: "MeetingNotes",
-            dependencies: ["MeetingNotesCore", "MeetingNotesUI"],
+            dependencies: ["MeetingNotesCore", "MeetingNotesUI", "MeetingNotesLaunch"],
             path: "Sources/MeetingNotes",
             linkerSettings: [
                 .linkedFramework("ScreenCaptureKit"),
@@ -55,14 +61,22 @@ let package = Package(
             dependencies: [.product(name: "FluidAudio", package: "FluidAudio")],
             path: "Sources/MeetingNotesDiarize"
         ),
+        // `MeetingNotesLauncher`: per-user background agent (SMAppService.agent) that opens the app when a meeting
+        // starts while it is not running. scripts/build-app.sh copies it into Contents/MacOS with its launchd plist.
+        .executableTarget(
+            name: "MeetingNotesLauncher",
+            dependencies: ["MeetingNotesLaunch"],
+            path: "Sources/MeetingNotesLauncher",
+            linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("CoreAudio")]
+        ),
         .testTarget(
             name: "MeetingNotesCoreTests",
-            dependencies: ["MeetingNotesCore"],
+            dependencies: ["MeetingNotesCore", "MeetingNotesLaunch"],
             path: "Tests/MeetingNotesCoreTests"
         ),
         .testTarget(
             name: "MeetingNotesUITests",
-            dependencies: ["MeetingNotesCore", "MeetingNotesUI"],
+            dependencies: ["MeetingNotesCore", "MeetingNotesUI", "MeetingNotesLaunch"],
             path: "Tests/MeetingNotesUITests"
         ),
     ],
