@@ -1,8 +1,9 @@
 # Optimization plan: speed after Stop, RAM, live transcription, one-click install
 
 Date: 2026-10-23. Status: **W1 done, W2 started**: Phase 0 harness (0.1, 0.2a synthetic fixtures, 0.4 run labels),
-1.1 mic-track skip, the long-block hallucination fix and 1.2 single encoder pass are built; baseline under "normal"
-pressure, real fixtures (0.2b), `diar_bench` (0.3), the baseline report (0.5) and 2.x are open. Results: section 7. Machine: M1 Pro, 16 GB, macOS 15.5, memory pressure
+1.1 mic-track skip, the long-block hallucination fix and 1.2 single encoder pass are built; Phase 4 adaptive
+keep-warm and 2.2 (Ollama unload under pressure) are built, **gains unmeasured**; baseline under "normal"
+pressure, real fixtures (0.2b), `diar_bench` (0.3), the baseline report (0.5), 2.1, 2.3-2.5 are open. Results: section 7. Machine: M1 Pro, 16 GB, macOS 15.5, memory pressure
 usually "warn" with 16-20 GB swap. Inputs: [`native-backend.md`](../research/native-backend.md),
 [`diarization-alternatives.md`](../research/diarization-alternatives.md),
 [`one-click-install.md`](../research/one-click-install.md), [`live-polish.md`](../research/live-polish.md),
@@ -197,6 +198,11 @@ heavy model resident at a time, and give memory back immediately.
 - **Acceptance:** on the 60 min fixture under "typical" conditions, swap growth ≤ 1 GB and no new "critical"
   transitions; worker peak ≤ 2.5 GB; wall time not worse.
 - **Effort:** 3-4 days. **Decision:** none (all within current config semantics; new config keys avoided).
+- **Status (2026-10-23):** 2.2 built, unmeasured: at job start (unless `ollama_preload`) the worker unloads **our**
+  `ollama_model` (`keep_alive: 0`) when `/api/ps` shows it resident and pressure is not "normal"
+  (`ollama_client.unload_if_resident`, `wiring.free_llm_under_pressure`). Kept models now `trim()` (gc + MLX
+  `clear_cache` / `torch.mps.empty_cache`) after each stage; release already did gc + cache clear. 2.1 telemetry, 2.3
+  MPS cap (needs a measured ratio) and 2.4-2.5 are open.
 
 ### Phase 3: faster diarization engine
 
@@ -236,6 +242,18 @@ the RAM cost. AGENTS rule 9 still holds: never spawned at launch or while record
 - **Expected gain:** 5-15 s per meeting [est]; more for batch imports. **Risk:** low (RAM held slightly longer).
 - **Acceptance:** second job in a queue starts transcribing ≥ 5 s earlier; no model held under "warn".
 - **Effort:** 1-1.5 days. **Decision:** none (default unchanged when pressure is not normal).
+- **Status (2026-10-23): built, gains unmeasured** (code + unit tests only; no bench, no model load).
+  `keep_models_warm` now takes `"auto"` (new default) besides true/false: models stay between stages and queued jobs
+  only while `kern.memorystatus_vm_pressure_level` is normal (unknown counts as pressure); on warn or worse they are
+  released after the stage, before the other heavy model loads (at most one resident under pressure) and every 5 s
+  while the worker is idle (event `{"event":"worker","status":"released","reason":"memory"}`); `true` keeps them
+  unless critical; `false` = old behaviour. Idle timeout stays `worker_idle_release_min` (1.0): the worker frees all
+  and exits. Policy: `domain/warm_policy.py`; cache: `adapters/outbound/model_cache.py`. App: explicit jobs reuse a
+  running worker of any priority (`WorkerReuse`), so "Create notes now" / Retry in "when idle" mode no longer respawns.
+  Not built: `warmup` on Stop (the worker loop is serial, so it would not overlap `prepare`, and warmup loads both
+  models at once; revisit with a background load after 2.1). **To measure:** second queued job's time to first
+  transcribe (target ≥ 5 s earlier), worker peak RSS with both models warm under normal pressure, swap delta,
+  how often "auto" actually keeps models on this Mac (pressure is usually warn), and the live→Stop whisper handoff.
 
 ### Phase 5: live transcription (design A) memory-warn policy
 
