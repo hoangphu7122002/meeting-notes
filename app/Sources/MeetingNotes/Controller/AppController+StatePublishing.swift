@@ -13,6 +13,7 @@ extension AppController {
         if next != pill { pill = next }
         let jobsActive = jobs.count > 0
         if state.jobsActive != jobsActive { state.jobsActive = jobsActive }
+        updateSetupBusy()
         syncTitleDraft()
         writeState()
         updateLevelTimer()

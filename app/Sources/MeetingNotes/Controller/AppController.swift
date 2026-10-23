@@ -93,6 +93,8 @@ final class AppController {
     var meterConsumers: Set<String> = []
     var levelTimer: Timer?
     var editTarget: TitleTarget?
+    /// First-run setup of the packaged app (nil in dev and shared installs).
+    var setupRunner: SetupRunner?
     /// Final folders of finished jobs, for titles committed after their job ended.
     var finishedJobs: [String: (folder: URL, hasNotes: Bool)] = [:]
 
@@ -124,6 +126,7 @@ final class AppController {
                                    notesPath: folder.appendingPathComponent("notes.md").path)
         }
         scheduleIdlePillReshow()
+        launchSetup()
         refresh()
     }
 

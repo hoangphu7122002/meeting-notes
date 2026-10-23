@@ -53,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidBecomeActive(_ notification: Notification) {
         controller.refreshPermissions()
+        controller.setupAppBecameActive()
     }
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {

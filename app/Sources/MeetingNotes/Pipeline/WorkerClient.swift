@@ -73,7 +73,9 @@ final class WorkerClient {
 
     private func spawn(priority: String, model: String) throws {
         let fm = FileManager.default
-        guard let location = Settings.pipelineLocation else { throw AppError(tr(.errPipelineNotConfigured)) }
+        guard let location = Settings.pipelineLocation else {
+            throw AppError(tr(AppInfo.isPackaged ? .errSetupIncomplete : .errPipelineNotConfigured))
+        }
         let uv = location.uvPath, pipelineDir = location.pipelineDir
         guard fm.isExecutableFile(atPath: uv) else { throw AppError(tr(.errUvNotFound, uv)) }
         guard fm.fileExists(atPath: pipelineDir) else { throw AppError(tr(.errPipelineNotFound, pipelineDir)) }

@@ -1,6 +1,7 @@
 // Bundle metadata, support/log directories and the shared error type (Settings).
 
 import Foundation
+import MeetingNotesCore
 
 public struct AppError: LocalizedError {
     public let message: String
@@ -28,6 +29,18 @@ public enum AppInfo {
     }
 
     public static var stateFile: URL { supportDir.appendingPathComponent("state.json") }
+
+    /// Release build (scripts/release.sh, Info.plist `MNPackaged`): the pipeline ships inside the bundle and the
+    /// first-run setup builds the per-user runtime. Dev and shared installs bake `MNPipelineDir` instead.
+    public static var isPackaged: Bool { info["MNPackaged"] as? Bool ?? false }
+
+    /// The packaged app's per-user runtime (pipeline copy, Python, models).
+    public static var runtime: RuntimeLayout { RuntimeLayout(supportDir: supportDir) }
+
+    /// Short version (`CFBundleShortVersionString`) plus build, the key the runtime setup is tied to.
+    public static var setupVersion: String {
+        "\(info["CFBundleShortVersionString"] as? String ?? "dev")+\(info["CFBundleVersion"] as? String ?? "0")"
+    }
 
     public static var logsDir: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/MeetingNotes", isDirectory: true)

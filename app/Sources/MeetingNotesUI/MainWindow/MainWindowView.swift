@@ -33,6 +33,9 @@ public struct MainWindowView: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: 14) {
             if state.systemAudioMissing { SystemAudioBanner(state: state, commands: commands) }
+            if let setup = state.setup, setup.phase != .complete {
+                SetupCard(machine: setup, location: state.appLocation, summaryModel: state.setupSummaryModel, commands: commands)
+            }
             if state.showGettingStarted { GettingStartedCard(commands: commands) }
             RecorderCard(state: state, commands: commands, editingChanged: editingChanged)
             switch state.pill {

@@ -30,6 +30,12 @@ public final class AppState: ObservableObject {
     @Published public var isBundled = AppInfo.isBundled
     /// Live transcript of the recording in progress; nil = live transcription off or unavailable (hidden).
     @Published public var liveTranscript: LiveTranscript?
+    /// First-run setup of the packaged app; nil in dev/shared installs (never shown there).
+    @Published public var setup: SetupMachine?
+    /// Where the bundle runs from (packaged app: a warning unless in an Applications folder).
+    @Published public var appLocation: AppLocation = .applications
+    /// The summary model the setup pulls (Settings › Summary model).
+    @Published public var setupSummaryModel = "qwen3:4b"
 
     public let clock = ClockModel()
     public let levels = LevelModel()

@@ -177,8 +177,9 @@ public enum Settings {
         set { defaults.set(newValue?.path, forKey: Key.lastNotesFolder) }
     }
 
-    /// Pipeline project dir + uv: defaults overrides, Info.plist `MNPipelineDir`/`MNUvPath`, `MN_PIPELINE_DIR`, then
-    /// a shared install (/Users/Shared/MeetingNotes/shared-install.json); see `PipelineLocator`.
+    /// Pipeline project dir + uv: defaults overrides, Info.plist `MNPipelineDir`/`MNUvPath`, `MN_PIPELINE_DIR`, the
+    /// packaged app's runtime (after its first-run setup), then a shared install
+    /// (/Users/Shared/MeetingNotes/shared-install.json); see `PipelineLocator`.
     public static var pipelineLocation: PipelineLocation? {
         PipelineLocator.resolve(
             pipelineOverride: defaults.string(forKey: Key.pipelineDir),
@@ -186,6 +187,7 @@ public enum Settings {
             pipelineEnv: ProcessInfo.processInfo.environment["MN_PIPELINE_DIR"],
             uvOverride: defaults.string(forKey: Key.uvPath),
             uvInfo: AppInfo.info["MNUvPath"] as? String,
+            packagedRoot: AppInfo.isPackaged ? AppInfo.runtime.root.path : nil,
             readFile: { FileManager.default.contents(atPath: $0) })
     }
 

@@ -121,6 +121,13 @@ public enum Tr: String, CaseIterable, Sendable {
     case warnTrackSilent, warnMeetingJSON, errNoMicDevice, warnMicDeviceChanged, warnMicStoppedAfterChange, errNoDisplay
     case warnSystemStopped, waitIdlePlugged, waitManual, hotkeyInvalid, hotkeyUnavailable
 
+    // First-run setup (packaged app)
+    case setupHeading, setupIntro, setupGatekeeperNote, setupStepRuntime, setupStepSpeech, setupStepDiarization
+    case setupStepOllama, setupStepSummary, actionSetUp, actionContinueSetup, actionCheckAgain, actionDownloadOllama
+    case actionOpenOllama, actionCopyBrewCommand, setupWaitingRecording, setupWaitingProcessing, setupPaused
+    case setupComplete, setupFailed, setupOllamaMissing, setupOllamaNotRunning, setupMoveToApplications
+    case setupStepWaiting, setupStepDone, setupWorking, errSetupIncomplete
+
     // Cards
     case autoStopTitle, autoStopDetail, autoStopSilence, autoStopAppEnded, detectionTitle, detectionHint
 
@@ -369,6 +376,41 @@ public enum Tr: String, CaseIterable, Sendable {
         case .waitManual: return ("Ghi chú được tạo thủ công", "Notes are created manually")
         case .hotkeyInvalid: return ("Phím tắt “%1” không hợp lệ; dùng %2.", "Invalid hotkey “%1”; using %2.")
         case .hotkeyUnavailable: return ("Phím tắt %1 không dùng được (ứng dụng khác đang dùng?).", "Global hotkey %1 is unavailable (used by another app?).")
+
+        case .setupHeading: return ("Cài đặt lần đầu", "First-time setup")
+        case .setupIntro:
+            return ("Meeting Notes chạy hoàn toàn trên máy này. Cần tải khoảng %1 một lần: môi trường Python, mô hình chép lời, nhận diện người nói và mô hình tóm tắt. Không cần tài khoản hay token. Bạn vẫn dùng máy bình thường; cài đặt tự tạm dừng khi bạn ghi âm hoặc đang tạo ghi chú.",
+                    "Meeting Notes runs entirely on this Mac. It downloads about %1 once: the Python environment, the transcription, speaker and summary models. No account or token needed. Keep working meanwhile; setup pauses by itself while you record or notes are being created.")
+        case .setupGatekeeperNote:
+            return ("Bước “Vẫn mở” (Open Anyway) trong Cài đặt hệ thống chỉ cần một lần cho mỗi bản tải về, và bạn đã làm xong.",
+                    "The “Open Anyway” step in System Settings is needed only once per download, and you have done it.")
+        case .setupStepRuntime: return ("Môi trường Python", "Python environment")
+        case .setupStepSpeech: return ("Mô hình chép lời (Whisper)", "Transcription model (Whisper)")
+        case .setupStepDiarization: return ("Nhận diện người nói (FluidAudio)", "Speaker identification (FluidAudio)")
+        case .setupStepOllama: return ("Ollama (chạy mô hình tóm tắt trên máy)", "Ollama (runs the summary model on this Mac)")
+        case .setupStepSummary: return ("Mô hình tóm tắt %1", "Summary model %1")
+        case .actionSetUp: return ("Cài đặt (~%1)", "Set up (~%1)")
+        case .actionContinueSetup: return ("Tiếp tục cài đặt", "Continue setup")
+        case .actionCheckAgain: return ("Kiểm tra lại", "Check again")
+        case .actionDownloadOllama: return ("Tải Ollama…", "Download Ollama…")
+        case .actionOpenOllama: return ("Mở Ollama", "Open Ollama")
+        case .actionCopyBrewCommand: return ("Sao chép lệnh Homebrew", "Copy Homebrew command")
+        case .setupWaitingRecording: return ("Tạm dừng trong lúc ghi âm; sẽ tự tiếp tục sau đó.", "Paused while recording; continues by itself afterwards.")
+        case .setupWaitingProcessing: return ("Tạm dừng trong lúc tạo ghi chú; sẽ tự tiếp tục sau đó.", "Paused while notes are being created; continues by itself afterwards.")
+        case .setupPaused: return ("Đã tạm dừng. Phần đã tải được giữ lại.", "Paused. Everything downloaded so far is kept.")
+        case .setupComplete: return ("Đã cài đặt xong. Bạn có thể bắt đầu ghi cuộc họp.", "Setup complete. You can record meetings now.")
+        case .setupFailed: return ("Bước này chưa xong: %1", "This step did not finish: %1")
+        case .setupOllamaMissing:
+            return ("Chưa có Ollama. Tải bản chính thức từ ollama.com, mở nó một lần, rồi bấm Kiểm tra lại. Hoặc dùng Homebrew: brew install ollama && brew services start ollama.",
+                    "Ollama is not installed. Download the official app from ollama.com, open it once, then press Check again. Or use Homebrew: brew install ollama && brew services start ollama.")
+        case .setupOllamaNotRunning: return ("Ollama đã cài nhưng chưa chạy. Mở Ollama rồi bấm Kiểm tra lại.", "Ollama is installed but not running. Open it, then press Check again.")
+        case .setupMoveToApplications:
+            return ("Hãy kéo Meeting Notes vào thư mục Applications rồi mở lại từ đó: quyền micro và mở khi đăng nhập cần một vị trí cố định.",
+                    "Drag Meeting Notes to the Applications folder and open it from there: microphone permission and Launch at Login need a fixed location.")
+        case .setupStepWaiting: return ("Đang chờ", "Waiting")
+        case .setupStepDone: return ("Xong", "Done")
+        case .setupWorking: return ("Đang chạy…", "Working…")
+        case .errSetupIncomplete: return ("Chưa cài đặt xong. Mở cửa sổ chính và bấm Cài đặt.", "Setup is not finished. Open the main window and press Set up.")
 
         case .autoStopTitle: return ("Có vẻ cuộc họp đã kết thúc — dừng sau %1 giây", "Meeting seems to have ended — stopping in %1 s")
         case .autoStopDetail: return ("%1. Âm thanh được giữ và ghi chú sẽ được tạo.", "%1. The audio is kept and notes are created.")

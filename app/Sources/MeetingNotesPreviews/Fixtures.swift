@@ -48,6 +48,7 @@ enum Scenario: String, CaseIterable {
     case idle, firstLaunch = "first-launch", recording, recordingWarning = "recording-warning", paused
     case recordingLive = "recording-live", liveListening = "recording-live-listening"
     case discardConfirm = "discard-confirm", processing, ready, error
+    case setup, setupOllama = "setup-ollama"
 }
 
 enum Appearance: String, CaseIterable {
@@ -146,6 +147,19 @@ enum Fixtures {
             state.recents = []
             state.lastResult = nil
             state.pill = .idle(attention: true)
+        case .setup, .setupOllama:
+            state.recents = []
+            state.lastResult = nil
+            var setup = SetupMachine(done: scenario == .setup ? [.runtime] : [.runtime, .speech, .diarization])
+            setup.start()
+            if scenario == .setup {
+                setup.stepStarted(.speech)
+                setup.progress(.speech, fraction: 0.42, detail: "Downloading mlx-community/whisper-large-v3-turbo-q4 ...")
+            } else {
+                setup.stepStarted(.ollama)
+                setup.ollama(.missing)
+            }
+            state.setup = setup
         case .recording, .recordingWarning, .discardConfirm, .recordingLive, .liveListening:
             state.machine = RecorderMachine(phase: .recording)
             state.pill = .recording

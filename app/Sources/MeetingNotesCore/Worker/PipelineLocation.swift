@@ -6,6 +6,9 @@ import Foundation
 /// Shared install (`scripts/install.sh --shared`): pipeline, venv, uv and models live in a world-readable directory
 /// (default /Users/Shared/MeetingNotes) with `shared-install.json` next to `pipeline/`. Other accounts cannot write
 /// there, so the worker runs the prebuilt environment as is (`UV_NO_SYNC`, `UV_FROZEN`) and uses the shared uv.
+/// Packaged app (release dmg, Info.plist `MNPackaged`): the first-run setup builds the same layout per user in
+/// `~/Library/Application Support/MeetingNotes/runtime` (`RuntimeLayout`), marker included, and the worker runs it
+/// the same way (the setup, not the worker, syncs it).
 public struct PipelineLocation: Equatable, Sendable {
     public let pipelineDir: String
     public let uvPath: String
@@ -39,16 +42,19 @@ public enum PipelineLocator {
         }
     }
 
-    /// Pipeline dir: user override, Info.plist, `MN_PIPELINE_DIR`, then the shared install's marker.
-    /// uv: user override, the shared install's uv (when the pipeline is shared), Info.plist, Homebrew.
+    /// Pipeline dir: user override, Info.plist, `MN_PIPELINE_DIR`, the packaged app's runtime (only when
+    /// `packagedRoot` is set and its setup wrote the marker), then the shared install's marker.
+    /// uv: user override, the marker's uv (when the pipeline has one), Info.plist, Homebrew.
     /// `readFile` returns a file's contents or nil (tests inject it).
     public static func resolve(pipelineOverride: String?, pipelineInfo: String?, pipelineEnv: String?,
                                uvOverride: String?, uvInfo: String?,
+                               packagedRoot: String? = nil,
                                sharedRoot: String = sharedRoot,
                                readFile: (String) -> Data?) -> PipelineLocation? {
+        let packagedMarker = nonEmpty(packagedRoot).flatMap { Marker.parse(readFile(markerPath(inRoot: $0))) }
         let fallbackMarker = Marker.parse(readFile(markerPath(inRoot: sharedRoot)))
         guard let dir = nonEmpty(pipelineOverride) ?? nonEmpty(pipelineInfo) ?? nonEmpty(pipelineEnv)
-            ?? nonEmpty(fallbackMarker?.pipelineDir) else { return nil }
+            ?? nonEmpty(packagedMarker?.pipelineDir) ?? nonEmpty(fallbackMarker?.pipelineDir) else { return nil }
         let marker = Marker.parse(readFile(markerPath(forPipeline: dir)))
         let shared = marker != nil
         let uv = nonEmpty(uvOverride) ?? (shared ? nonEmpty(marker?.uvPath) : nil) ?? nonEmpty(uvInfo) ?? defaultUvPath

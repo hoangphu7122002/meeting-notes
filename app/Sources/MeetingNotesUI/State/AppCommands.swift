@@ -40,4 +40,25 @@ public protocol AppCommands: AnyObject {
     func setShowInDock(_ show: Bool)
     func setPillVisibility(whileRecording: Bool, whenIdle: Bool)
     func resetPillPosition()
+    /// First-run setup card buttons (default implementation: no-op).
+    func setupAction(_ action: SetupAction)
 }
+
+/// Buttons of the first-run setup card.
+public enum SetupAction: Sendable {
+    /// Set up / Continue / Retry / Check again.
+    case start
+    case cancel
+    /// Opens https://ollama.com/download in the browser (the official installer; the app never installs Ollama).
+    case downloadOllama
+    /// Opens the installed Ollama.app.
+    case openOllama
+    /// Copies the Homebrew alternative to the clipboard.
+    case copyBrewCommand
+}
+
+public extension AppCommands {
+    /// Default: no-op (previews, tests). The app controller implements it.
+    func setupAction(_ action: SetupAction) {}
+}
+
